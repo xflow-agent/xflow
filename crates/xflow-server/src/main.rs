@@ -32,7 +32,7 @@ struct Args {
     ollama: String,
 
     /// 模型名称
-    #[arg(short, long, default_value = "qwen2.5:7b")]
+    #[arg(short, long, default_value = "gemma4:e4b")]
     model: String,
 
     /// 工作目录
