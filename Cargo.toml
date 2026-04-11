@@ -7,6 +7,7 @@ members = [
     "crates/xflow-tools",
     "crates/xflow-context",
     "crates/xflow-agent",
+    "crates/xflow-server",
 ]
 
 [workspace.package]
@@ -59,3 +60,12 @@ xflow-model = { path = "crates/xflow-model" }
 xflow-tools = { path = "crates/xflow-tools" }
 xflow-context = { path = "crates/xflow-context" }
 xflow-agent = { path = "crates/xflow-agent" }
+xflow-server = { path = "crates/xflow-server" }
+
+# Web 框架
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+
+# UUID
+uuid = { version = "1.0", features = ["v4", "serde"] }

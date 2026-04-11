@@ -1,0 +1,39 @@
+[package]
+name = "xflow-server"
+description = "xflow Web API 服务器"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "xflow-server"
+path = "src/main.rs"
+
+[dependencies]
+xflow-core.workspace = true
+xflow-model.workspace = true
+xflow-tools.workspace = true
+xflow-context.workspace = true
+xflow-agent.workspace = true
+
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+futures.workspace = true
+clap.workspace = true
+
+# Web 框架
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+
+# UUID
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# 日志
+tracing-subscriber = { workspace = true }

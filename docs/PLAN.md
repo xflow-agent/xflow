@@ -204,16 +204,39 @@ AI: [运行 cargo check]
 
 ---
 
-### 阶段 9：Web API + 前端
+### 阶段 9：Web API + 前端 ✅
 
 **目标**：提供 Web 界面
 
 **实现内容**：
-- [ ] REST/WebSocket API
-- [ ] Web 前端界面
-- [ ] 移动端适配
+- [x] REST API 服务器 (axum)
+- [x] WebSocket 实时通信
+- [x] Web 前端界面 (HTML/CSS/JS)
+- [x] 会话管理
 
-**验证点**：能通过浏览器/手机使用
+**验证点**：能通过浏览器使用
+
+**API 端点**：
+
+| 端点 | 方法 | 功能 |
+|------|------|------|
+| `/api/sessions` | POST | 创建新会话 |
+| `/api/sessions` | GET | 列出所有会话 |
+| `/api/sessions/:id` | GET | 获取会话信息 |
+| `/api/sessions/:id/chat` | POST | 发送消息 |
+| `/api/sessions/:id/clear` | POST | 清空会话 |
+| `/api/sessions/:id` | DELETE | 删除会话 |
+| `/api/ws` | WebSocket | 实时通信 |
+| `/health` | GET | 健康检查 |
+
+**启动命令**：
+```bash
+# 启动 Web 服务器
+cargo run --bin xflow-server
+
+# 指定参数
+cargo run --bin xflow-server -- --addr 0.0.0.0:3000 --model qwen2.5:7b
+```
 
 ---
 

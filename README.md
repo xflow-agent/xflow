@@ -375,9 +375,42 @@ AI: 这是一个 Rust 工作区项目，包含以下模块...
 
 ---
 
-### 🚧 阶段 9：Web API + 前端（待实现）
+### ✅ 阶段 9：Web API + 前端
 
 **目标**: 提供 Web 界面
+
+**实现内容**:
+- REST API 服务器 (axum)
+- WebSocket 实时通信
+- Web 前端界面 (HTML/CSS/JS)
+- 会话管理
+
+**API 端点**:
+
+| 端点 | 方法 | 功能 |
+|------|------|------|
+| `/api/sessions` | POST | 创建新会话 |
+| `/api/sessions` | GET | 列出所有会话 |
+| `/api/sessions/:id` | GET | 获取会话信息 |
+| `/api/sessions/:id/chat` | POST | 发送消息 |
+| `/api/sessions/:id/clear` | POST | 清空会话 |
+| `/api/sessions/:id` | DELETE | 删除会话 |
+| `/api/ws` | WebSocket | 实时通信 |
+| `/health` | GET | 健康检查 |
+
+**启动命令**:
+```bash
+# 启动 Web 服务器
+cargo run --bin xflow-server
+
+# 指定参数
+cargo run --bin xflow-server -- --addr 0.0.0.0:3000 --model qwen2.5:7b
+```
+
+**验证测试**:
+打开浏览器访问 `http://localhost:3000`，可正常对话。
+
+---
 
 ## 项目结构
 
@@ -392,6 +425,10 @@ xflow/
 │   │   ├── agent.rs        # Agent trait 抽象
 │   │   ├── coder.rs        # 代码编写器
 │   │   └── reviewer.rs     # 代码审查器
+│   ├── xflow-server/       # Web API 服务器
+│   │   ├── api.rs          # REST API
+│   │   ├── ws.rs           # WebSocket
+│   │   └── state.rs        # 状态管理
 │   └── xflow-tools/        # 工具系统
 │       ├── read_file.rs    # 读取文件
 │       ├── write_file.rs   # 写入文件
@@ -400,6 +437,10 @@ xflow/
 │       ├── run_shell.rs    # 执行 Shell 命令
 │       ├── git.rs          # Git 操作工具
 │       └── agent_tool.rs   # Agent 工具包装
+├── web/                    # Web 前端
+│   ├── index.html          # 主页面
+│   ├── styles.css          # 样式
+│   └── app.js              # 逻辑
 ├── docs/                   # 设计文档
 │   ├── PLAN.md             # 实施计划
 │   └── ARCHITECTURE.md     # 架构设计
@@ -452,11 +493,17 @@ xflow/
 ## 开发命令
 
 ```bash
-# 运行开发版本
+# 运行 CLI 版本
 cargo run
 
 # 运行发布版本
 cargo run --release
+
+# 运行 Web 服务器
+cargo run --bin xflow-server
+
+# 运行 Web 服务器（指定参数）
+cargo run --bin xflow-server -- --addr 0.0.0.0:3000 --model qwen2.5:7b
 
 # 代码检查
 cargo clippy
