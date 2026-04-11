@@ -1,0 +1,29 @@
+[package]
+name = "xflow-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# 异步
+tokio.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+
+# 序列化
+serde.workspace = true
+serde_json.workspace = true
+
+# 错误处理
+anyhow.workspace = true
+thiserror.workspace = true
+
+# 日志
+tracing.workspace = true
+
+# 内部依赖
+xflow-model = { path = "../xflow-model" }
+xflow-tools = { path = "../xflow-tools" }
+xflow-context = { path = "../xflow-context" }

@@ -11,6 +11,7 @@ license.workspace = true
 xflow-model.workspace = true
 xflow-tools.workspace = true
 xflow-context.workspace = true
+xflow-agent.workspace = true
 
 tokio.workspace = true
 serde.workspace = true

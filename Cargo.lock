@@ -2284,6 +2284,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "xflow-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "xflow-context",
+ "xflow-model",
+ "xflow-tools",
+]
+
+[[package]]
 name = "xflow-context"
 version = "0.1.0"
 dependencies = [
@@ -2311,6 +2328,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "xflow-agent",
  "xflow-context",
  "xflow-model",
  "xflow-tools",
