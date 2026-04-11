@@ -1,0 +1,32 @@
+[package]
+name = "xflow-context"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# 异步运行时
+tokio = { workspace = true }
+
+# 序列化
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# 错误处理
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# 日志
+tracing = { workspace = true }
+
+# 路径
+dirs = { workspace = true }
+
+# glob 匹配
+glob = "0.3"
+
+# 忽略模式 (类似 .gitignore)
+ignore = "0.4"

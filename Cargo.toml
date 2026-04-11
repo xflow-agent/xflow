@@ -5,6 +5,7 @@ members = [
     "crates/xflow-core",
     "crates/xflow-model",
     "crates/xflow-tools",
+    "crates/xflow-context",
 ]
 
 [workspace.package]
@@ -55,3 +56,4 @@ dirs = "5.0"
 xflow-core = { path = "crates/xflow-core" }
 xflow-model = { path = "crates/xflow-model" }
 xflow-tools = { path = "crates/xflow-tools" }
+xflow-context = { path = "crates/xflow-context" }

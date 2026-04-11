@@ -35,7 +35,12 @@ impl Repl {
         let provider = Arc::new(OllamaProvider::new(host.to_string(), model.to_string()));
 
         // 初始化会话
-        let session = Session::new(provider, workdir.to_path_buf());
+        let mut session = Session::new(provider, workdir.to_path_buf());
+        
+        // 初始化项目上下文
+        if let Err(e) = session.init_project_context() {
+            tracing::warn!("项目上下文初始化失败: {}", e);
+        }
 
         // 打印欢迎信息
         print_welcome();

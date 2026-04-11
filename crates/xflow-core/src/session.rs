@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 use xflow_model::{Message, ModelProvider, StreamChunk, ToolCall, ToolDefinition};
 use xflow_tools::ToolRegistry;
+use xflow_context::ContextBuilder;
 
 /// 最大工具调用循环次数
 const MAX_TOOL_LOOPS: usize = 20;
@@ -13,8 +14,8 @@ const MAX_TOOL_LOOPS: usize = 20;
 /// 需要确认的工具列表
 const TOOLS_REQUIRING_CONFIRMATION: &[&str] = &["write_file", "run_shell"];
 
-/// 系统提示词
-const SYSTEM_PROMPT: &str = r#"你是一个智能编程助手 xflow (心流)。你可以使用工具来帮助用户完成编程任务。
+/// 系统提示词（基础部分）
+const SYSTEM_PROMPT_BASE: &str = r#"你是一个智能编程助手 xflow (心流)。你可以使用工具来帮助用户完成编程任务。
 
 ## 你的能力
 
@@ -74,6 +75,8 @@ pub struct Session {
     auto_confirm: bool,
     /// 是否已添加系统提示词
     system_added: bool,
+    /// 项目上下文信息（可选）
+    project_context: Option<String>,
 }
 
 impl Session {
@@ -89,7 +92,30 @@ impl Session {
             tools,
             auto_confirm: false,
             system_added: false,
+            project_context: None,
         }
+    }
+
+    /// 初始化项目上下文（扫描项目并生成上下文信息）
+    pub fn init_project_context(&mut self) -> Result<()> {
+        info!("初始化项目上下文: {:?}", self.workdir);
+        
+        let builder = ContextBuilder::new(self.workdir.clone());
+        match builder.generate_system_context() {
+            Ok(context) => {
+                info!("项目上下文初始化成功");
+                println!("📁 正在扫描项目目录...");
+                if let Ok(proj_info) = builder.build() {
+                    println!("   {}", proj_info.info.summary());
+                }
+                self.project_context = Some(context);
+            }
+            Err(e) => {
+                warn!("项目上下文初始化失败: {}", e);
+            }
+        }
+        
+        Ok(())
     }
 
     /// 设置自动确认模式
@@ -213,7 +239,12 @@ impl Session {
     pub async fn process(&mut self, input: &str) -> Result<()> {
         // 首次对话时添加系统提示词
         if !self.system_added {
-            self.messages.push(Message::system(SYSTEM_PROMPT));
+            let system_prompt = if let Some(ref context) = self.project_context {
+                format!("{}\n{}", SYSTEM_PROMPT_BASE, context)
+            } else {
+                SYSTEM_PROMPT_BASE.to_string()
+            };
+            self.messages.push(Message::system(&system_prompt));
             self.system_added = true;
         }
 
