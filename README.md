@@ -259,9 +259,52 @@ AI: [调用 list_directory 工具]
 
 ---
 
-### 🚧 阶段 7：Git 工具（待实现）
+### ✅ 阶段 7：Git 工具
 
 **目标**: AI 能进行 Git 操作
+
+**实现内容**:
+- git_status 工具 - 查看仓库状态
+- git_diff 工具 - 查看文件差异
+- git_log 工具 - 查看提交历史
+- git_commit 工具 - 创建提交（需确认）
+- git_add 工具 - 添加文件到暂存区
+- git_branch 工具 - 管理分支
+
+**验证测试**:
+```bash
+./target/release/xflow
+
+# 查看状态
+xflow> 查看 git 状态
+[调用工具: git_status]
+AI: 当前分支: main
+    你的分支与上游分支一致...
+
+# 查看差异
+xflow> 查看 src/main.rs 的更改
+[调用工具: git_diff]
+AI: diff --git a/src/main.rs b/src/main.rs...
+
+# 查看日志
+xflow> 查看最近 5 次提交
+[调用工具: git_log]
+AI: 6c9db73 feat: 阶段6 - 智能上下文管理
+    2701a61 docs: 更新 README...
+
+# 创建提交（需确认）
+xflow> 提交这些更改，消息是 "fix: 修复问题"
+[调用工具: git_commit]
+==================================================
+⚠️  需要确认操作
+==================================================
+工具: git_commit
+提交消息: "fix: 修复问题"
+==================================================
+是否执行此操作? [y/N] y
+✓ 已确认，执行操作...
+AI: 提交成功！新提交: abc1234...
+```
 
 ---
 
@@ -283,12 +326,14 @@ xflow/
 │   ├── xflow/              # CLI 主入口
 │   ├── xflow-core/         # 核心引擎 (Session, Agent Loop)
 │   ├── xflow-model/        # 模型接口层 (Ollama)
+│   ├── xflow-context/      # 上下文管理
 │   └── xflow-tools/        # 工具系统
 │       ├── read_file.rs    # 读取文件
 │       ├── write_file.rs   # 写入文件
 │       ├── list_directory.rs # 列出目录
 │       ├── search_file.rs  # 搜索代码
-│       └── run_shell.rs    # 执行 Shell 命令
+│       ├── run_shell.rs    # 执行 Shell 命令
+│       └── git.rs          # Git 操作工具
 ├── docs/                   # 设计文档
 │   ├── PLAN.md             # 实施计划
 │   └── ARCHITECTURE.md     # 架构设计
@@ -297,13 +342,31 @@ xflow/
 
 ## 内置工具
 
+### 文件工具
+
 | 工具 | 功能 | 需确认 |
 |------|------|--------|
 | `read_file` | 读取文件内容 | ❌ |
 | `write_file` | 写入文件（覆盖） | ✅ |
 | `list_directory` | 列出目录内容 | ❌ |
 | `search_file` | 搜索代码 (ripgrep) | ❌ |
+
+### Shell 工具
+
+| 工具 | 功能 | 需确认 |
+|------|------|--------|
 | `run_shell` | 执行 Shell 命令 | ✅ |
+
+### Git 工具
+
+| 工具 | 功能 | 需确认 |
+|------|------|--------|
+| `git_status` | 查看仓库状态 | ❌ |
+| `git_diff` | 查看文件差异 | ❌ |
+| `git_log` | 查看提交历史 | ❌ |
+| `git_add` | 添加文件到暂存区 | ❌ |
+| `git_commit` | 创建提交 | ✅ |
+| `git_branch` | 管理分支 | ❌ |
 
 ## REPL 命令
 

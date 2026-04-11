@@ -8,6 +8,7 @@ mod write_file;
 mod list_directory;
 mod search_file;
 mod run_shell;
+mod git;
 
 pub use tool::{Tool, ToolCall, ToolResult, ToolDefinition};
 pub use read_file::ReadFileTool;
@@ -15,6 +16,10 @@ pub use write_file::WriteFileTool;
 pub use list_directory::ListDirectoryTool;
 pub use search_file::SearchFileTool;
 pub use run_shell::{RunShellTool, analyze_command, DangerAnalysis};
+pub use git::{
+    GitStatusTool, GitDiffTool, GitLogTool, GitCommitTool,
+    GitAddTool, GitBranchTool,
+};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -55,7 +60,8 @@ impl ToolRegistry {
     
     /// 获取需要确认的工具列表
     pub fn tools_requiring_confirmation(&self) -> Vec<&'static str> {
-        vec!["write_file", "run_shell"]
+        // write_file 和 git_commit 需要确认
+        vec!["write_file", "run_shell", "git_commit"]
     }
     
     /// 检查工具是否需要确认
@@ -73,10 +79,23 @@ impl Default for ToolRegistry {
 /// 创建默认工具注册表
 pub fn create_default_tools() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
+    
+    // 文件工具
     registry.register(Arc::new(ReadFileTool::new()));
     registry.register(Arc::new(WriteFileTool::new()));
     registry.register(Arc::new(ListDirectoryTool::new()));
     registry.register(Arc::new(SearchFileTool::new()));
+    
+    // Shell 工具
     registry.register(Arc::new(RunShellTool::new()));
+    
+    // Git 工具
+    registry.register(Arc::new(GitStatusTool::new()));
+    registry.register(Arc::new(GitDiffTool::new()));
+    registry.register(Arc::new(GitLogTool::new()));
+    registry.register(Arc::new(GitCommitTool::new()));
+    registry.register(Arc::new(GitAddTool::new()));
+    registry.register(Arc::new(GitBranchTool::new()));
+    
     registry
 }
