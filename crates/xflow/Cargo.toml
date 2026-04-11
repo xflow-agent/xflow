@@ -1,0 +1,21 @@
+[package]
+name = "xflow"
+description = "xflow CLI - AI 编程助手"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+xflow-core.workspace = true
+xflow-model.workspace = true
+
+tokio.workspace = true
+clap.workspace = true
+rustyline.workspace = true
+inquire.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+dirs.workspace = true

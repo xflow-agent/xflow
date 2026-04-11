@@ -1,0 +1,55 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/xflow",
+    "crates/xflow-core",
+    "crates/xflow-model",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["xflow contributors"]
+license = "MIT"
+repository = "https://github.com/xflow/xflow"
+
+[workspace.dependencies]
+# 异步运行时
+tokio = { version = "1.36", features = ["full"] }
+
+# HTTP 客户端
+reqwest = { version = "0.11", features = ["json", "stream"] }
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# REPL
+rustyline = "14.0"
+inquire = "0.7"
+
+# 错误处理
+thiserror = "1.0"
+anyhow = "1.0"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 异步 trait
+async-trait = "0.1"
+
+# 流处理
+futures = "0.3"
+async-stream = "0.3"
+
+# 路径
+dirs = "5.0"
+
+# 内部 crates
+xflow-core = { path = "crates/xflow-core" }
+xflow-model = { path = "crates/xflow-model" }

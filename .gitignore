@@ -1,0 +1,28 @@
+# Rust
+target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+
+# Logs
+*.log
+
+# Local config
+.env
+.env.local
+
+# xflow
+.xflow/
