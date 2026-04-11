@@ -11,7 +11,7 @@ use xflow_tools::ToolRegistry;
 const MAX_TOOL_LOOPS: usize = 10;
 
 /// 需要确认的工具列表
-const TOOLS_REQUIRING_CONFIRMATION: &[&str] = &["write_file"];
+const TOOLS_REQUIRING_CONFIRMATION: &[&str] = &["write_file", "run_shell"];
 
 /// 会话状态
 pub struct Session {
@@ -78,7 +78,7 @@ impl Session {
         }
 
         // 格式化参数显示
-        let args_display = match tool_name {
+        let (args_display, danger_info) = match tool_name {
             "write_file" => {
                 if let Some(path) = args.get("path") {
                     if let Some(content) = args.get("content") {
@@ -88,26 +88,60 @@ impl Session {
                         } else {
                             content_str.to_string()
                         };
-                        format!("路径: {}\n内容预览: {}", path, preview)
+                        (format!("路径: {}\n内容预览: {}", path, preview), None)
                     } else {
-                        format!("路径: {}", path)
+                        (format!("路径: {}", path), None)
                     }
                 } else {
-                    args.to_string()
+                    (args.to_string(), None)
                 }
             }
-            _ => args.to_string(),
+            "run_shell" => {
+                if let Some(cmd) = args.get("command").and_then(|c| c.as_str()) {
+                    // 分析命令危险程度
+                    let analysis = xflow_tools::analyze_command(cmd);
+                    let danger_info = if analysis.is_dangerous {
+                        Some((analysis.level, analysis.reason.clone()))
+                    } else {
+                        None
+                    };
+                    (format!("命令: {}", cmd), danger_info)
+                } else {
+                    (args.to_string(), None)
+                }
+            }
+            _ => (args.to_string(), None),
         };
 
+        // 显示确认对话框
         println!("\n{}", "=".repeat(50));
-        println!("⚠️  需要确认操作");
+        
+        // 如果是危险命令，显示警告
+        if let Some((level, reason)) = &danger_info {
+            let level_display = match level {
+                3 => "🔴 极度危险",
+                2 => "🟠 高度危险",
+                1 => "🟡 中度危险",
+                _ => "⚠️ 需要注意",
+            };
+            println!("{} - {}", level_display, reason);
+        } else {
+            println!("⚠️  需要确认操作");
+        }
+        
         println!("{}", "=".repeat(50));
         println!("工具: {}", tool_name);
         println!("{}", args_display);
         println!("{}", "=".repeat(50));
 
         // 使用 inquire 进行确认
-        match inquire::Confirm::new("是否执行此操作?")
+        let confirm_msg = if danger_info.is_some() {
+            "⚠️  确认执行此危险操作?"
+        } else {
+            "是否执行此操作?"
+        };
+        
+        match inquire::Confirm::new(confirm_msg)
             .with_default(false)
             .prompt()
         {

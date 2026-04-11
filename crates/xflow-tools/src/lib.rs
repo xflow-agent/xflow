@@ -7,12 +7,14 @@ mod read_file;
 mod write_file;
 mod list_directory;
 mod search_file;
+mod run_shell;
 
 pub use tool::{Tool, ToolCall, ToolResult, ToolDefinition};
 pub use read_file::ReadFileTool;
 pub use write_file::WriteFileTool;
 pub use list_directory::ListDirectoryTool;
 pub use search_file::SearchFileTool;
+pub use run_shell::{RunShellTool, analyze_command, DangerAnalysis};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -53,7 +55,7 @@ impl ToolRegistry {
     
     /// 获取需要确认的工具列表
     pub fn tools_requiring_confirmation(&self) -> Vec<&'static str> {
-        vec!["write_file"]
+        vec!["write_file", "run_shell"]
     }
     
     /// 检查工具是否需要确认
@@ -75,5 +77,6 @@ pub fn create_default_tools() -> ToolRegistry {
     registry.register(Arc::new(WriteFileTool::new()));
     registry.register(Arc::new(ListDirectoryTool::new()));
     registry.register(Arc::new(SearchFileTool::new()));
+    registry.register(Arc::new(RunShellTool::new()));
     registry
 }
