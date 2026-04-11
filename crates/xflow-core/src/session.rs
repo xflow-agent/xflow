@@ -8,10 +8,42 @@ use xflow_model::{Message, ModelProvider, StreamChunk, ToolCall, ToolDefinition}
 use xflow_tools::ToolRegistry;
 
 /// 最大工具调用循环次数
-const MAX_TOOL_LOOPS: usize = 10;
+const MAX_TOOL_LOOPS: usize = 20;
 
 /// 需要确认的工具列表
 const TOOLS_REQUIRING_CONFIRMATION: &[&str] = &["write_file", "run_shell"];
+
+/// 系统提示词
+const SYSTEM_PROMPT: &str = r#"你是一个智能编程助手 xflow (心流)。你可以使用工具来帮助用户完成编程任务。
+
+## 你的能力
+
+你可以使用以下工具：
+- read_file: 读取文件内容
+- write_file: 写入文件（需用户确认）
+- list_directory: 列出目录内容
+- search_file: 搜索代码（使用 ripgrep）
+- run_shell: 执行 Shell 命令（需用户确认）
+
+## 工作原则
+
+1. **自动执行**: 当用户给你一个任务时，你应该自动使用工具来完成任务，不需要等待用户确认每个步骤。
+2. **循环执行**: 如果任务需要多个步骤（如修复多个错误），你应该自动循环执行直到任务完成。
+3. **及时汇报**: 在执行过程中，简要说明你在做什么，让用户了解进度。
+4. **安全意识**: 对于危险操作（写入文件、执行命令），系统会要求用户确认。
+5. **任务完成**: 当任务完成后，告诉用户结果。如果遇到无法解决的问题，告诉用户原因。
+
+## 示例
+
+用户: "修复所有编译错误"
+你应该：
+1. 运行 cargo check 查看错误
+2. 读取有错误的文件
+3. 修复代码
+4. 再次检查确认修复成功
+5. 报告结果
+
+记住：主动使用工具完成任务，不要只是给建议。"#;
 
 /// 会话状态
 pub struct Session {
@@ -27,6 +59,8 @@ pub struct Session {
     tools: ToolRegistry,
     /// 是否自动确认（跳过确认对话框）
     auto_confirm: bool,
+    /// 是否已添加系统提示词
+    system_added: bool,
 }
 
 impl Session {
@@ -41,6 +75,7 @@ impl Session {
             model_name,
             tools,
             auto_confirm: false,
+            system_added: false,
         }
     }
 
@@ -163,6 +198,12 @@ impl Session {
 
     /// 处理用户输入
     pub async fn process(&mut self, input: &str) -> Result<()> {
+        // 首次对话时添加系统提示词
+        if !self.system_added {
+            self.messages.push(Message::system(SYSTEM_PROMPT));
+            self.system_added = true;
+        }
+
         // 添加用户消息
         self.messages.push(Message::user(input));
 
@@ -170,12 +211,19 @@ impl Session {
 
         // 工具调用循环
         let mut loop_count = 0;
+        let mut total_tools_called = 0;
 
         loop {
             if loop_count >= MAX_TOOL_LOOPS {
                 warn!("达到最大工具调用循环次数: {}", MAX_TOOL_LOOPS);
-                println!("\n[警告: 达到最大循环次数，停止工具调用]");
+                println!("\n⚠️ 已达到最大循环次数 ({}), 停止自动执行", MAX_TOOL_LOOPS);
+                println!("💡 你可以继续对话，让模型完成剩余任务");
                 break;
+            }
+
+            // 显示循环进度（非首次）
+            if loop_count > 0 {
+                println!("\n── 自动执行 (第 {}/{} 轮) ──", loop_count + 1, MAX_TOOL_LOOPS);
             }
 
             // 调用模型（流式 + 工具）
@@ -232,11 +280,16 @@ impl Session {
                     .push(Message::assistant_with_tools(tool_calls.clone()));
 
                 // 执行每个工具调用
-                for tool_call in &tool_calls {
+                for (i, tool_call) in tool_calls.iter().enumerate() {
                     let tool_name = &tool_call.function.name;
                     let tool_args = &tool_call.function.arguments;
 
-                    println!("\n[调用工具: {}]", tool_name);
+                    // 工具调用进度
+                    if tool_calls.len() > 1 {
+                        println!("\n[调用工具 {}/{}: {}]", i + 1, tool_calls.len(), tool_name);
+                    } else {
+                        println!("\n[调用工具: {}]", tool_name);
+                    }
                     debug!("工具参数: {}", tool_args);
 
                     // 检查是否需要确认
@@ -258,12 +311,20 @@ impl Session {
                         format!("未知工具: {}", tool_name)
                     };
 
-                    println!("[工具结果: {} 字节]", result.len());
-                    debug!("工具结果: {}", if result.len() > 200 { &result[..200] } else { &result });
+                    // 显示结果摘要
+                    let result_preview = if result.len() > 200 {
+                        format!("{}...", &result[..200])
+                    } else {
+                        result.clone()
+                    };
+                    println!("[结果: {} 字节]", result.len());
+                    debug!("工具结果: {}", result_preview);
 
                     // 添加工具结果消息
                     self.messages
                         .push(Message::tool_result(tool_name, result));
+                    
+                    total_tools_called += 1;
                 }
 
                 loop_count += 1;
@@ -275,6 +336,12 @@ impl Session {
                 self.messages.push(Message::assistant(&full_response));
             }
 
+            // 显示执行统计
+            if total_tools_called > 0 {
+                println!("\n✅ 任务完成 (共调用 {} 次工具, {} 轮循环)", 
+                    total_tools_called, loop_count);
+            }
+
             break;
         }
 
@@ -284,6 +351,7 @@ impl Session {
     /// 清空会话
     pub fn clear(&mut self) {
         self.messages.clear();
+        self.system_added = false;
         info!("会话已清空");
     }
 
