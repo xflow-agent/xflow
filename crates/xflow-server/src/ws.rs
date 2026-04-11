@@ -11,11 +11,12 @@ use axum::{
 };
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, info, warn};
 
 use crate::state::{AppState, SessionId};
-use xflow_core::{OutputCallback, OutputMessage};
+use xflow_core::OutputMessage;
 
 /// WebSocket 消息类型
 #[derive(Debug, Serialize, Deserialize)]
@@ -64,15 +65,6 @@ pub fn create_ws_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-/// WebSocket 升级处理
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-    Query(query): Query<WsQuery>,
-) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state, query))
-}
-
 /// 将输出消息转换为 WebSocket 响应
 fn to_response(msg: OutputMessage) -> WsResponse {
     match msg {
@@ -88,9 +80,21 @@ fn to_response(msg: OutputMessage) -> WsResponse {
     }
 }
 
+/// WebSocket 升级处理
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<WsQuery>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, state, query))
+}
+
 /// 处理 WebSocket 连接
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>, query: WsQuery) {
-    let (mut sender, mut receiver) = socket.split();
+    let (sender, mut receiver) = socket.split();
+    
+    // 将 sender 包装在 Mutex 中以便共享
+    let sender = Arc::new(Mutex::new(sender));
     
     // 获取或创建会话
     let session_id = if let Some(id) = query.session_id {
@@ -106,115 +110,135 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, query: WsQuery) 
     info!("WebSocket 连接建立, session_id: {}", session_id);
     
     // 发送会话信息
-    let session_info = WsResponse::SessionInfo { session_id };
-    if let Ok(json) = serde_json::to_string(&session_info) {
-        let _ = sender.send(WsMessage::Text(json)).await;
+    {
+        let session_info = WsResponse::SessionInfo { session_id };
+        if let Ok(json) = serde_json::to_string(&session_info) {
+            let mut s = sender.lock().await;
+            let _ = s.send(WsMessage::Text(json)).await;
+        }
     }
     
     // 消息处理循环
-    while let Some(msg) = receiver.next().await {
-        match msg {
-            Ok(WsMessage::Text(text)) => {
-                debug!("收到 WebSocket 消息: {}", text);
-                
-                // 解析消息
-                let request: WsRequest = match serde_json::from_str(&text) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        warn!("解析消息失败: {}", e);
-                        let error = WsResponse::Error {
-                            message: format!("无效的消息格式: {}", e),
-                        };
-                        if let Ok(json) = serde_json::to_string(&error) {
-                            let _ = sender.send(WsMessage::Text(json)).await;
-                        }
-                        continue;
-                    }
-                };
-                
-                // 处理请求
-                match request {
-                    WsRequest::Chat { message } => {
-                        // 创建消息队列（用于收集 Session 输出）
-                        let output_queue: Arc<StdMutex<Vec<OutputMessage>>> = Arc::new(StdMutex::new(Vec::new()));
-                        let queue_clone = output_queue.clone();
+    loop {
+        tokio::select! {
+            // 接收 WebSocket 消息
+            msg = receiver.next() => {
+                match msg {
+                    Some(Ok(WsMessage::Text(text))) => {
+                        debug!("收到 WebSocket 消息: {}", text);
                         
-                        // 创建输出回调
-                        let output_callback: OutputCallback = Box::new(move |msg| {
-                            if let Ok(mut queue) = queue_clone.lock() {
-                                queue.push(msg);
-                            }
-                        });
-                        
-                        // 获取会话并处理
-                        if let Some(session) = state.get_session(session_id).await {
-                            let mut session = session.lock().await;
-                            session.set_output(output_callback);
-                            session.set_auto_confirm(true); // Web 端自动确认
-                            
-                            // 处理消息
-                            if let Err(e) = session.process(&message).await {
-                                let error = WsResponse::Error { message: e.to_string() };
+                        // 解析消息
+                        let request: WsRequest = match serde_json::from_str(&text) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                warn!("解析消息失败: {}", e);
+                                let error = WsResponse::Error {
+                                    message: format!("无效的消息格式: {}", e),
+                                };
                                 if let Ok(json) = serde_json::to_string(&error) {
-                                    let _ = sender.send(WsMessage::Text(json)).await;
+                                    let mut s = sender.lock().await;
+                                    let _ = s.send(WsMessage::Text(json)).await;
+                                }
+                                continue;
+                            }
+                        };
+                        
+                        // 处理请求
+                        match request {
+                            WsRequest::Chat { message } => {
+                                // 创建异步消息通道
+                                let (tx, mut rx) = mpsc::unbounded_channel::<OutputMessage>();
+                                
+                                // 创建输出回调（使用同步通道转发到异步通道）
+                                let (sync_tx, sync_rx) = std::sync::mpsc::channel::<OutputMessage>();
+                                let output_callback = xflow_core::channel_callback(sync_tx);
+                                
+                                // 启动同步到异步的桥接任务
+                                let bridge_handle = tokio::task::spawn_blocking(move || {
+                                    while let Ok(msg) = sync_rx.recv() {
+                                        if tx.send(msg).is_err() {
+                                            break;
+                                        }
+                                    }
+                                });
+                                
+                                // 启动消息转发任务
+                                let sender_clone = sender.clone();
+                                let forward_handle = tokio::spawn(async move {
+                                    while let Some(msg) = rx.recv().await {
+                                        let response = to_response(msg);
+                                        if let Ok(json) = serde_json::to_string(&response) {
+                                            let mut s = sender_clone.lock().await;
+                                            if s.send(WsMessage::Text(json)).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                });
+                                
+                                // 获取会话并处理
+                                if let Some(session) = state.get_session(session_id).await {
+                                    let mut session = session.lock().await;
+                                    session.set_output(output_callback);
+                                    session.set_auto_confirm(true);
+                                    
+                                    // 处理消息
+                                    if let Err(e) = session.process(&message).await {
+                                        let error = WsResponse::Error { message: e.to_string() };
+                                        if let Ok(json) = serde_json::to_string(&error) {
+                                            let mut s = sender.lock().await;
+                                            let _ = s.send(WsMessage::Text(json)).await;
+                                        }
+                                    }
+                                }
+                                
+                                // 等待任务完成
+                                drop(bridge_handle); // 桥接任务会在通道关闭后自动结束
+                                let _ = forward_handle.await;
+                                
+                                // 发送完成信号
+                                let done = WsResponse::Done;
+                                if let Ok(json) = serde_json::to_string(&done) {
+                                    let mut s = sender.lock().await;
+                                    let _ = s.send(WsMessage::Text(json)).await;
+                                }
+                            }
+                            WsRequest::Clear => {
+                                if let Some(session) = state.get_session(session_id).await {
+                                    let mut session = session.lock().await;
+                                    session.clear();
+                                }
+                                
+                                let done = WsResponse::Done;
+                                if let Ok(json) = serde_json::to_string(&done) {
+                                    let mut s = sender.lock().await;
+                                    let _ = s.send(WsMessage::Text(json)).await;
+                                }
+                            }
+                            WsRequest::Ping => {
+                                let pong = WsResponse::Pong;
+                                if let Ok(json) = serde_json::to_string(&pong) {
+                                    let mut s = sender.lock().await;
+                                    let _ = s.send(WsMessage::Text(json)).await;
                                 }
                             }
                         }
-                        
-                        // 发送收集的消息
-                        let messages: Vec<OutputMessage> = {
-                            if let Ok(mut queue) = output_queue.lock() {
-                                std::mem::take(&mut *queue)
-                            } else {
-                                Vec::new()
-                            }
-                        };
-                        
-                        for msg in messages {
-                            let response = to_response(msg);
-                            if let Ok(json) = serde_json::to_string(&response) {
-                                let _ = sender.send(WsMessage::Text(json)).await;
-                            }
-                        }
-                        
-                        // 发送完成信号
-                        let done = WsResponse::Done;
-                        if let Ok(json) = serde_json::to_string(&done) {
-                            let _ = sender.send(WsMessage::Text(json)).await;
-                        }
                     }
-                    WsRequest::Clear => {
-                        if let Some(session) = state.get_session(session_id).await {
-                            let mut session = session.lock().await;
-                            session.clear();
-                        }
-                        
-                        // 发送确认
-                        let done = WsResponse::Done;
-                        if let Ok(json) = serde_json::to_string(&done) {
-                            let _ = sender.send(WsMessage::Text(json)).await;
-                        }
+                    Some(Ok(WsMessage::Close(_))) => {
+                        info!("WebSocket 连接关闭");
+                        break;
                     }
-                    WsRequest::Ping => {
-                        let pong = WsResponse::Pong;
-                        if let Ok(json) = serde_json::to_string(&pong) {
-                            let _ = sender.send(WsMessage::Text(json)).await;
-                        }
+                    Some(Ok(WsMessage::Ping(data))) => {
+                        let mut s = sender.lock().await;
+                        let _ = s.send(WsMessage::Pong(data)).await;
                     }
+                    Some(Err(e)) => {
+                        warn!("WebSocket 错误: {}", e);
+                        break;
+                    }
+                    _ => {}
                 }
             }
-            Ok(WsMessage::Close(_)) => {
-                info!("WebSocket 连接关闭");
-                break;
-            }
-            Ok(WsMessage::Ping(data)) => {
-                let _ = sender.send(WsMessage::Pong(data)).await;
-            }
-            Err(e) => {
-                warn!("WebSocket 错误: {}", e);
-                break;
-            }
-            _ => {}
         }
     }
     

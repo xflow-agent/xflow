@@ -2,6 +2,8 @@
 //!
 //! 用于将 Session 的输出发送到不同目标（控制台、WebSocket 等）
 
+use std::sync::mpsc::Sender;
+
 /// 消息类型
 #[derive(Debug, Clone)]
 pub enum OutputMessage {
@@ -49,4 +51,11 @@ pub fn console_callback() -> OutputCallback {
 /// 创建空回调（用于测试）
 pub fn null_callback() -> OutputCallback {
     Box::new(|_| {})
+}
+
+/// 创建通道回调（用于实时发送）
+pub fn channel_callback(tx: Sender<OutputMessage>) -> OutputCallback {
+    Box::new(move |msg| {
+        let _ = tx.send(msg);
+    })
 }
