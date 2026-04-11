@@ -5,7 +5,7 @@
 use anyhow::Result;
 use ignore::WalkBuilder;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tracing::{debug, info};
 use crate::language::{detect_language, is_source_file, Language};
 
@@ -223,18 +223,19 @@ impl ProjectScanner {
     
     /// 检测项目类型
     fn detect_project_type(&self, files: &[FileInfo]) -> ProjectType {
-        let has_cargo_toml = files.iter().any(|f| f.path == PathBuf::from("Cargo.toml"));
-        let has_package_json = files.iter().any(|f| f.path == PathBuf::from("package.json"));
+        use std::path::Path;
+        let has_cargo_toml = files.iter().any(|f| f.path.as_path() == Path::new("Cargo.toml"));
+        let has_package_json = files.iter().any(|f| f.path.as_path() == Path::new("package.json"));
         let has_pyproject = files.iter().any(|f| 
-            f.path == PathBuf::from("pyproject.toml") ||
-            f.path == PathBuf::from("setup.py") ||
-            f.path == PathBuf::from("requirements.txt")
+            f.path.as_path() == Path::new("pyproject.toml") ||
+            f.path.as_path() == Path::new("setup.py") ||
+            f.path.as_path() == Path::new("requirements.txt")
         );
-        let has_go_mod = files.iter().any(|f| f.path == PathBuf::from("go.mod"));
-        let has_pom_xml = files.iter().any(|f| f.path == PathBuf::from("pom.xml"));
+        let has_go_mod = files.iter().any(|f| f.path.as_path() == Path::new("go.mod"));
+        let has_pom_xml = files.iter().any(|f| f.path.as_path() == Path::new("pom.xml"));
         let has_build_gradle = files.iter().any(|f| 
-            f.path == PathBuf::from("build.gradle") ||
-            f.path == PathBuf::from("build.gradle.kts")
+            f.path.as_path() == Path::new("build.gradle") ||
+            f.path.as_path() == Path::new("build.gradle.kts")
         );
         
         // 优先检测明确的项目类型

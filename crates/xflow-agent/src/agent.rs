@@ -68,8 +68,10 @@ pub enum TaskType {
 
 /// 任务状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum TaskStatus {
     /// 待处理
+    #[default]
     Pending,
     /// 进行中
     InProgress,
@@ -81,11 +83,6 @@ pub enum TaskStatus {
     Skipped,
 }
 
-impl Default for TaskStatus {
-    fn default() -> Self {
-        TaskStatus::Pending
-    }
-}
 
 /// Agent 执行响应
 #[derive(Debug, Clone)]
@@ -111,6 +108,17 @@ pub struct ToolCallRequest {
     pub arguments: serde_json::Value,
 }
 
+/// 工具执行结果
+#[derive(Debug, Clone)]
+pub struct ToolResult {
+    /// 工具名称
+    pub name: String,
+    /// 执行结果
+    pub result: String,
+    /// 是否成功
+    pub success: bool,
+}
+
 /// Agent 共享上下文
 #[derive(Debug, Clone)]
 pub struct AgentContext {
@@ -124,6 +132,8 @@ pub struct AgentContext {
     pub previous_results: Vec<AgentResponse>,
     /// 当前任务
     pub current_task: Option<Task>,
+    /// 工具执行结果（本轮）
+    pub tool_results: Vec<ToolResult>,
 }
 
 impl AgentContext {
@@ -135,6 +145,7 @@ impl AgentContext {
             relevant_files: Vec::new(),
             previous_results: Vec::new(),
             current_task: None,
+            tool_results: Vec::new(),
         }
     }
 
@@ -148,6 +159,46 @@ impl AgentContext {
     /// 添加之前的结果
     pub fn add_result(&mut self, result: AgentResponse) {
         self.previous_results.push(result);
+    }
+    
+    /// 添加工具结果
+    pub fn add_tool_result(&mut self, result: ToolResult) {
+        self.tool_results.push(result);
+    }
+    
+    /// 清空工具结果
+    pub fn clear_tool_results(&mut self) {
+        self.tool_results.clear();
+    }
+    
+    /// 获取工具结果的文本描述（用于注入到 prompt）
+    pub fn tool_results_summary(&self) -> String {
+        if self.tool_results.is_empty() {
+            return String::new();
+        }
+        
+        let mut summary = String::from("已执行的工具及其结果:\n");
+        for (i, tr) in self.tool_results.iter().enumerate() {
+            // 安全截断，避免 UTF-8 边界问题
+            let truncated = if tr.result.len() > 3000 {
+                let safe_end = tr.result.char_indices()
+                    .take_while(|(idx, _)| *idx < 3000)
+                    .last()
+                    .map(|(idx, c)| idx + c.len_utf8())
+                    .unwrap_or(0);
+                format!("{}...(共 {} 字节)", &tr.result[..safe_end], tr.result.len())
+            } else {
+                tr.result.clone()
+            };
+            summary.push_str(&format!(
+                "\n{}. 工具: {}\n   状态: {}\n   结果:\n{}\n",
+                i + 1,
+                tr.name,
+                if tr.success { "成功" } else { "失败" },
+                truncated
+            ));
+        }
+        summary
     }
 }
 
@@ -176,24 +227,4 @@ pub trait Agent: Send + Sync {
 
     /// 获取系统提示词
     fn system_prompt(&self) -> String;
-}
-
-/// 根据任务类型选择合适的 Agent
-pub fn select_agent_for_task(task_type: TaskType) -> AgentType {
-    match task_type {
-        TaskType::Complex => AgentType::Planner,
-        TaskType::Coding => AgentType::Coder,
-        TaskType::Review => AgentType::Reviewer,
-        TaskType::Analysis => AgentType::Reviewer,
-        TaskType::Simple => AgentType::General,
-    }
-}
-
-/// 创建任务 ID
-pub fn generate_task_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    format!("task-{}", duration.as_millis())
 }

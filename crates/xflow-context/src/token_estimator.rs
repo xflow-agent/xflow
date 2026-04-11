@@ -83,11 +83,6 @@ pub fn estimate_tokens(text: &str) -> usize {
     TokenEstimator::new().estimate(text)
 }
 
-/// 便捷函数：估算多条消息的总 token 数
-pub fn estimate_tokens_multi(messages: &[&str]) -> usize {
-    TokenEstimator::new().estimate_messages(messages)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

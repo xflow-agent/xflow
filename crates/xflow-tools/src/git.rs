@@ -4,17 +4,8 @@
 
 use crate::tool::Tool;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use serde::Deserialize;
 use std::process::Command;
-
-/// Git 工具的公共参数
-#[derive(Debug, Deserialize)]
-struct GitBaseArgs {
-    /// 工作目录（可选，默认为当前目录）
-    #[serde(default)]
-    workdir: Option<String>,
-}
 
 /// git_status 参数
 #[derive(Debug, Deserialize)]
@@ -113,6 +104,12 @@ fn is_git_repo(workdir: Option<&str>) -> bool {
 /// Git 状态工具
 pub struct GitStatusTool;
 
+impl Default for GitStatusTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GitStatusTool {
     pub fn new() -> Self {
         Self
@@ -179,6 +176,12 @@ impl Tool for GitStatusTool {
 
 /// Git 差异工具
 pub struct GitDiffTool;
+
+impl Default for GitDiffTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl GitDiffTool {
     pub fn new() -> Self {
@@ -261,6 +264,12 @@ impl Tool for GitDiffTool {
 
 /// Git 日志工具
 pub struct GitLogTool;
+
+impl Default for GitLogTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl GitLogTool {
     pub fn new() -> Self {
@@ -348,6 +357,12 @@ impl Tool for GitLogTool {
 /// 注意：此工具需要用户确认后才能执行
 pub struct GitCommitTool;
 
+impl Default for GitCommitTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GitCommitTool {
     pub fn new() -> Self {
         Self
@@ -427,6 +442,12 @@ impl Tool for GitCommitTool {
 /// Git 添加工具
 pub struct GitAddTool;
 
+impl Default for GitAddTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GitAddTool {
     pub fn new() -> Self {
         Self
@@ -502,6 +523,12 @@ impl Tool for GitAddTool {
 
 /// Git 分支工具
 pub struct GitBranchTool;
+
+impl Default for GitBranchTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl GitBranchTool {
     pub fn new() -> Self {

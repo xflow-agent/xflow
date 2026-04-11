@@ -7,6 +7,7 @@ use tracing::{debug, info, warn};
 use xflow_model::{Message, ModelProvider, StreamChunk, ToolCall, ToolDefinition};
 use xflow_tools::ToolRegistry;
 use xflow_context::ContextBuilder;
+use xflow_agent::{ReviewerAgent, CoderAgent, Agent, AgentContext, Task, TaskType, TaskStatus};
 
 /// 最大工具调用循环次数
 const MAX_TOOL_LOOPS: usize = 20;
@@ -17,47 +18,56 @@ const TOOLS_REQUIRING_CONFIRMATION: &[&str] = &["write_file", "run_shell"];
 /// 系统提示词（基础部分）
 const SYSTEM_PROMPT_BASE: &str = r#"你是一个智能编程助手 xflow (心流)。你可以使用工具来帮助用户完成编程任务。
 
-## 你的能力
+## 基础工具
 
-你可以使用以下工具：
-- read_file: 读取文件内容
+- read_file: 读取单个文件内容
 - write_file: 写入文件（需用户确认）
 - list_directory: 列出目录内容
-- search_file: 搜索代码（使用 ripgrep）
+- search_file: 搜索代码
 - run_shell: 执行 Shell 命令（需用户确认）
+
+## 高级工具（重要！）
+
+### analyze_project - 项目分析工具
+
+**当用户说以下内容时，必须调用此工具，不要直接用 read_file：**
+- "分析项目"、"分析这个项目"、"分析所有功能"
+- "项目架构是什么"、"项目结构"
+- "了解这个项目"、"理解项目"
+
+**示例：**
+用户: "分析一下这个项目的所有功能"
+正确做法: 调用 analyze_project(task="分析项目所有功能")
+错误做法: 直接调用 read_file(Cargo.toml) 然后输出结论
+
+### implement_feature - 功能实现工具
+
+**当用户要求实现新功能时，调用此工具：**
+- "实现xxx功能"、"添加xxx功能"
+- "创建xxx"、"编写xxx"
 
 ## 工作原则
 
-1. **完整执行**: 当用户给你一个多步骤任务时，你必须执行**所有步骤**，不能只做一部分就停止。
-2. **自动循环**: 你会自动循环执行直到任务完全完成。不要在中间步骤停止。
-3. **及时汇报**: 简要说明你在做什么，让用户了解进度。
-4. **安全意识**: 对于危险操作（写入文件、执行命令），系统会要求用户确认。
+1. **识别任务类型**：先判断是"分析"还是"实现"还是"简单操作"
+2. **选择正确工具**：复杂任务用高级工具，简单任务用基础工具
+3. **完整执行**：不要中途停止，要完成所有必要的步骤
+4. **自动循环**：你会自动循环执行直到任务完全完成
 
-## 重要：多步骤任务示例
+## 任务类型判断
 
-示例1: 用户说 "在 /tmp/test 目录创建 Rust 项目并运行"
-你需要执行以下**所有步骤**：
-1. run_shell: mkdir -p /tmp/test
-2. run_shell: cd /tmp/test && cargo init
-3. write_file: 写入 src/main.rs 内容
-4. run_shell: cd /tmp/test && cargo run
-5. 报告运行结果
+| 用户请求 | 正确做法 |
+|---------|---------|
+| "分析项目功能" | 调用 analyze_project |
+| "实现登录功能" | 调用 implement_feature |
+| "读取 main.rs" | 直接调用 read_file |
+| "执行 cargo build" | 直接调用 run_shell |
 
-示例2: 用户说 "修复所有编译错误"
-你需要执行以下**所有步骤**：
-1. run_shell: cargo check 查看错误
-2. read_file: 读取有错误的文件
-3. write_file: 修复代码
-4. run_shell: cargo check 再次检查
-5. 如果还有错误，继续修复；如果没有，报告成功
+## 重要提醒
 
-## 关键原则
-
-- **不要中途停止**: 即使完成了一个步骤，如果还有后续步骤，必须继续执行
-- **不要只是建议**: 不要说"你可以..."，而是直接执行
-- **检查结果**: 每个步骤完成后，检查是否需要继续
-
-记住：任务是"创建项目并运行"，不是"创建项目"。"并"意味着所有步骤都要完成。"#;
+- ❌ 不要在用户说"分析项目"时，只读取 Cargo.toml 就输出结论
+- ✅ 必须调用 analyze_project 工具执行完整分析流程
+- ❌ 不要只建议用户做什么，而是直接执行
+- ✅ 完成所有必要的步骤后再输出结果"#;
 
 /// 会话状态
 pub struct Session {
@@ -346,6 +356,12 @@ impl Session {
                     // 执行工具
                     let result = if !confirmed {
                         "操作已取消".to_string()
+                    } else if tool_name == "analyze_project" {
+                        // 特殊处理：调用 Reviewer Agent
+                        self.execute_reviewer_agent(tool_args.clone()).await
+                    } else if tool_name == "implement_feature" {
+                        // 特殊处理：调用 Coder Agent
+                        self.execute_coder_agent(tool_args.clone()).await
                     } else if let Some(tool) = self.tools.get(tool_name) {
                         match tool.execute(tool_args.clone()).await {
                             Ok(result) => result,
@@ -413,5 +429,189 @@ impl Session {
     #[allow(dead_code)]
     pub fn workdir(&self) -> &PathBuf {
         &self.workdir
+    }
+
+    /// 执行 Reviewer Agent（项目分析）
+    async fn execute_reviewer_agent(&self, args: serde_json::Value) -> String {
+        let task_desc = args.get("task")
+            .and_then(|t| t.as_str())
+            .unwrap_or("分析项目");
+
+        info!("执行 Reviewer Agent: {}", task_desc);
+        println!("\n📊 开始项目分析...");
+
+        // 创建 Agent
+        let reviewer = ReviewerAgent::new();
+        
+        // 创建任务
+        let task = Task {
+            id: format!("review-{:?}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
+            description: task_desc.to_string(),
+            task_type: TaskType::Analysis,
+            subtasks: vec![],
+            status: TaskStatus::Pending,
+            priority: 5,
+            dependencies: vec![],
+        };
+
+        // Agent 工具循环（只调用基础工具，不调用其它 Agent）
+        let mut context = AgentContext::new(self.workdir.clone());
+        let max_iterations = 10;
+        let mut iteration = 0;
+        
+        loop {
+            if iteration >= max_iterations {
+                warn!("Agent 达到最大迭代次数");
+                break;
+            }
+            
+            // 调用 Agent
+            match reviewer.execute(&task, &context, self.provider.clone()).await {
+                Ok(response) => {
+                    // 打印输出
+                    if !response.output.is_empty() {
+                        println!("{}", response.output);
+                    }
+                    
+                    // 如果没有工具调用，返回结果
+                    if response.tool_calls.is_empty() {
+                        return response.output;
+                    }
+                    
+                    // 执行工具调用
+                    for tool_call in &response.tool_calls {
+                        let tool_name = &tool_call.name;
+                        let tool_args = &tool_call.arguments;
+                        
+                        // 跳过 Agent 工具（Agent 不能调用其它 Agent）
+                        if tool_name == "analyze_project" || tool_name == "implement_feature" {
+                            println!("[跳过 Agent 工具调用: {}]", tool_name);
+                            continue;
+                        }
+                        
+                        println!("\n[Agent 调用工具: {}]", tool_name);
+                        
+                        // 执行基础工具
+                        let result = if let Some(tool) = self.tools.get(tool_name) {
+                            match tool.execute(tool_args.clone()).await {
+                                Ok(r) => r,
+                                Err(e) => format!("错误: {}", e),
+                            }
+                        } else {
+                            format!("未知工具: {}", tool_name)
+                        };
+                        
+                        println!("[结果: {} 字节]", result.len());
+                        
+                        // 将结果添加到上下文
+                        context.add_tool_result(xflow_agent::ToolResult {
+                            name: tool_name.clone(),
+                            result,
+                            success: true,
+                        });
+                    }
+                    
+                    iteration += 1;
+                }
+                Err(e) => {
+                    warn!("Agent 执行失败: {}", e);
+                    return format!("分析失败: {}", e);
+                }
+            }
+        }
+        
+        "分析完成".to_string()
+    }
+
+    /// 执行 Coder Agent（功能实现）
+    async fn execute_coder_agent(&self, args: serde_json::Value) -> String {
+        let task_desc = args.get("task")
+            .and_then(|t| t.as_str())
+            .unwrap_or("实现功能");
+
+        info!("执行 Coder Agent: {}", task_desc);
+        println!("\n🔧 开始功能实现...");
+
+        // 创建 Agent 和上下文
+        let coder = CoderAgent::new();
+        
+        // 创建任务
+        let task = Task {
+            id: format!("code-{:?}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
+            description: task_desc.to_string(),
+            task_type: TaskType::Coding,
+            subtasks: vec![],
+            status: TaskStatus::Pending,
+            priority: 5,
+            dependencies: vec![],
+        };
+
+        // Agent 工具循环（只调用基础工具，不调用其它 Agent）
+        let mut context = AgentContext::new(self.workdir.clone());
+        let max_iterations = 10;
+        let mut iteration = 0;
+        
+        loop {
+            if iteration >= max_iterations {
+                warn!("Agent 达到最大迭代次数");
+                break;
+            }
+            
+            // 调用 Agent
+            match coder.execute(&task, &context, self.provider.clone()).await {
+                Ok(response) => {
+                    // 打印输出
+                    if !response.output.is_empty() {
+                        println!("{}", response.output);
+                    }
+                    
+                    // 如果没有工具调用，返回结果
+                    if response.tool_calls.is_empty() {
+                        return response.output;
+                    }
+                    
+                    // 执行工具调用
+                    for tool_call in &response.tool_calls {
+                        let tool_name = &tool_call.name;
+                        let tool_args = &tool_call.arguments;
+                        
+                        // 跳过 Agent 工具（Agent 不能调用其它 Agent）
+                        if tool_name == "analyze_project" || tool_name == "implement_feature" {
+                            println!("[跳过 Agent 工具调用: {}]", tool_name);
+                            continue;
+                        }
+                        
+                        println!("\n[Agent 调用工具: {}]", tool_name);
+                        
+                        // 执行基础工具
+                        let result = if let Some(tool) = self.tools.get(tool_name) {
+                            match tool.execute(tool_args.clone()).await {
+                                Ok(r) => r,
+                                Err(e) => format!("错误: {}", e),
+                            }
+                        } else {
+                            format!("未知工具: {}", tool_name)
+                        };
+                        
+                        println!("[结果: {} 字节]", result.len());
+                        
+                        // 将结果添加到上下文
+                        context.add_tool_result(xflow_agent::ToolResult {
+                            name: tool_name.clone(),
+                            result,
+                            success: true,
+                        });
+                    }
+                    
+                    iteration += 1;
+                }
+                Err(e) => {
+                    warn!("Agent 执行失败: {}", e);
+                    return format!("实现失败: {}", e);
+                }
+            }
+        }
+        
+        "实现完成".to_string()
     }
 }

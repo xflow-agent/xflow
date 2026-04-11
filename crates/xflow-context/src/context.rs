@@ -148,7 +148,7 @@ impl ContextBuilder {
         let mut dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
         for file in &info.source_files {
             if let Some(parent) = file.path.parent() {
-                if parent != PathBuf::from("") {
+                if !parent.as_os_str().is_empty() {
                     // 只取第一级目录
                     if let Some(first) = parent.iter().next() {
                         dirs.insert(first.to_string_lossy().to_string());

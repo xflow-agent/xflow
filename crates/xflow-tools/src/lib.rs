@@ -9,6 +9,7 @@ mod list_directory;
 mod search_file;
 mod run_shell;
 mod git;
+mod agent_tool;
 
 pub use tool::{Tool, ToolCall, ToolResult, ToolDefinition};
 pub use read_file::ReadFileTool;
@@ -20,6 +21,7 @@ pub use git::{
     GitStatusTool, GitDiffTool, GitLogTool, GitCommitTool,
     GitAddTool, GitBranchTool,
 };
+pub use agent_tool::{ReviewerAgentTool, CoderAgentTool};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -96,6 +98,10 @@ pub fn create_default_tools() -> ToolRegistry {
     registry.register(Arc::new(GitCommitTool::new()));
     registry.register(Arc::new(GitAddTool::new()));
     registry.register(Arc::new(GitBranchTool::new()));
+    
+    // Agent 工具（高级工具）
+    registry.register(Arc::new(ReviewerAgentTool::new()));
+    registry.register(Arc::new(CoderAgentTool::new()));
     
     registry
 }

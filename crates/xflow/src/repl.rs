@@ -8,16 +8,11 @@ use std::path::Path;
 use std::sync::Arc;
 use xflow_core::Session;
 use xflow_model::OllamaProvider;
-use xflow_agent::{AgentCoordinator, AgentType};
 
 /// REPL 交互界面
 pub struct Repl {
     editor: Editor<(), DefaultHistory>,
     session: Session,
-    /// Agent 模式开关
-    agent_mode: bool,
-    /// Agent 协调器
-    coordinator: AgentCoordinator,
 }
 
 impl Repl {
@@ -47,17 +42,12 @@ impl Repl {
             tracing::warn!("项目上下文初始化失败: {}", e);
         }
 
-        // 初始化 Agent 协调器
-        let coordinator = AgentCoordinator::new(provider, workdir.to_path_buf());
-
         // 打印欢迎信息
         print_welcome();
 
         Ok(Self { 
             editor, 
             session,
-            agent_mode: false,
-            coordinator,
         })
     }
 
@@ -65,8 +55,7 @@ impl Repl {
     pub async fn run(&mut self) -> Result<()> {
         loop {
             // 读取用户输入
-            let prompt = if self.agent_mode { "xflow [agent]> " } else { "xflow> " };
-            let readline = self.editor.readline(prompt);
+            let readline = self.editor.readline("xflow> ");
 
             match readline {
                 Ok(line) => {
@@ -83,12 +72,8 @@ impl Repl {
                         continue;
                     }
 
-                    // 根据模式处理输入
-                    if self.agent_mode {
-                        self.process_with_agent(line).await?;
-                    } else {
-                        self.session.process(line).await?;
-                    }
+                    // 处理输入（Agent 工具已集成到工具系统中）
+                    self.session.process(line).await?;
                 }
                 Err(ReadlineError::Interrupted) => {
                     println!("\n使用 /exit 或 Ctrl-D 退出");
@@ -117,24 +102,6 @@ impl Repl {
         Ok(())
     }
 
-    /// 使用 Agent 系统处理请求
-    async fn process_with_agent(&mut self, input: &str) -> Result<()> {
-        println!("\n{}", "─".repeat(50));
-        println!("🤖 Agent 模式 - 多 Agent 协作");
-        println!("{}", "─".repeat(50));
-        
-        match self.coordinator.process(input).await {
-            Ok(result) => {
-                result.print_summary();
-            }
-            Err(e) => {
-                println!("\n❌ Agent 执行失败: {}", e);
-            }
-        }
-        
-        Ok(())
-    }
-
     /// 处理特殊命令
     async fn handle_command(&mut self, line: &str) -> Result<bool> {
         match line {
@@ -155,17 +122,6 @@ impl Repl {
                 println!("当前模型: {}", self.session.model_name());
                 return Ok(true);
             }
-            "/agent" | "/agents" => {
-                self.agent_mode = !self.agent_mode;
-                if self.agent_mode {
-                    println!("🤖 已切换到 Agent 模式");
-                    println!("   可用 Agent: {:?}", self.coordinator.available_agents());
-                    println!("   输入任务，系统会自动分配合适的 Agent 处理");
-                } else {
-                    println!("已切换回普通模式");
-                }
-                return Ok(true);
-            }
             _ if line.starts_with('/') => {
                 println!("未知命令: {}，使用 /help 查看帮助", line);
                 return Ok(true);
@@ -184,7 +140,6 @@ fn print_welcome() {
 ║           xflow - 心流编程助手           ║
 ║                                         ║
 ║  输入 /help 查看帮助                    ║
-║  输入 /agent 切换 Agent 模式            ║
 ║  输入 /exit 退出                        ║
 ╚═════════════════════════════════════════╝
 "#
@@ -200,16 +155,19 @@ fn print_help() {
   /exit, /quit, /q 退出
   /clear           清空会话
   /model           显示当前模型
-  /agent, /agents  切换 Agent 模式
 
-Agent 模式:
-  在 Agent 模式下，系统会根据任务类型自动选择合适的 Agent:
-  - PlannerAgent: 任务分解
-  - CoderAgent: 代码编写
-  - ReviewerAgent: 代码审查
+高级工具:
+  AI 会自动判断并调用以下高级工具：
+  - analyze_project: 项目分析（"分析项目"、"分析功能"）
+  - implement_feature: 功能实现（"实现xxx功能"）
 
 使用方法:
-  直接输入问题或指令，AI 会帮助您完成编程任务。
+  直接输入问题或指令，AI 会自动选择合适的工具完成你的任务。
+  
+示例:
+  "分析一下这个项目的所有功能"
+  "实现一个用户登录功能"
+  "修复 src/main.rs 中的编译错误"
 "#
     );
 }

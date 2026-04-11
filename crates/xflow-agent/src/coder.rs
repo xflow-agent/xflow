@@ -2,7 +2,7 @@
 //!
 //! 负责代码编写、修改、重构等任务
 
-use crate::agent::{Agent, AgentContext, AgentResponse, AgentType, Task, TaskType, TaskStatus, ToolCallRequest, generate_task_id};
+use crate::agent::{Agent, AgentContext, AgentResponse, AgentType, Task, TaskType, ToolCallRequest};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;

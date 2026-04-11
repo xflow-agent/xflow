@@ -2,7 +2,7 @@
 //!
 //! 负责代码审查、分析、问题检测等任务
 
-use crate::agent::{Agent, AgentContext, AgentResponse, AgentType, Task, TaskType, ToolCallRequest, generate_task_id};
+use crate::agent::{Agent, AgentContext, AgentResponse, AgentType, Task, TaskType, ToolCallRequest};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -184,17 +184,55 @@ impl Agent for ReviewerAgent {
         let system_prompt = self.system_prompt();
         let mut messages = vec![Message::system(&system_prompt)];
         
-        // 添加上下文
-        let context_info = if !context.relevant_files.is_empty() {
-            format!("需要审查的文件:\n{}\n", context.relevant_files.join("\n"))
+        // 构建上下文信息
+        let mut context_parts = Vec::new();
+        
+        // 添加相关文件
+        if !context.relevant_files.is_empty() {
+            context_parts.push(format!("需要审查的文件:\n{}", context.relevant_files.join("\n")));
+        }
+        
+        // 添加之前任务的结果
+        if !context.previous_results.is_empty() {
+            let prev_summary: Vec<String> = context.previous_results.iter()
+                .take(3) // 最多3个之前的结果
+                .map(|r| r.output.chars().take(500).collect::<String>())
+                .collect();
+            context_parts.push(format!("之前任务的结果:\n{}", prev_summary.join("\n---\n")));
+        }
+        
+        // 检查是否有工具执行结果
+        let has_tool_results = !context.tool_results.is_empty();
+        
+        // 构建用户提示
+        let context_info = if context_parts.is_empty() {
+            String::new()
         } else {
-            "需要审查整个项目".to_string()
+            context_parts.join("\n\n") + "\n\n"
         };
         
-        let user_prompt = format!(
-            "{}\n\n审查任务:\n{}",
-            context_info, task.description
-        );
+        let user_prompt = if has_tool_results {
+            // 有工具结果时，明确告诉模型如何继续
+            let tool_results = context.tool_results_summary();
+            format!(
+                "{}{}\n\n你已经执行了工具调用并获得了结果。\n\
+                请基于上述工具执行结果，继续完成审查任务：\n{}\n\n\
+                你可以：\n\
+                1. 基于已有结果直接输出分析报告\n\
+                2. 如果需要更多信息，可以继续调用工具\n\
+                \n\
+                现在请继续处理：",
+                context_info, tool_results, task.description
+            )
+        } else {
+            // 没有工具结果时，是初始调用
+            format!(
+                "{}审查任务:\n{}\n\n\
+                你可以使用可用工具来收集信息，然后输出分析结果。",
+                context_info, task.description
+            )
+        };
+        
         messages.push(Message::user(&user_prompt));
 
         // 调用模型（带工具）
