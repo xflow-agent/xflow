@@ -10,6 +10,9 @@ use xflow_tools::ToolRegistry;
 /// 最大工具调用循环次数
 const MAX_TOOL_LOOPS: usize = 10;
 
+/// 需要确认的工具列表
+const TOOLS_REQUIRING_CONFIRMATION: &[&str] = &["write_file"];
+
 /// 会话状态
 pub struct Session {
     /// 消息历史
@@ -22,6 +25,8 @@ pub struct Session {
     model_name: String,
     /// 工具注册表
     tools: ToolRegistry,
+    /// 是否自动确认（跳过确认对话框）
+    auto_confirm: bool,
 }
 
 impl Session {
@@ -35,7 +40,13 @@ impl Session {
             workdir,
             model_name,
             tools,
+            auto_confirm: false,
         }
+    }
+
+    /// 设置自动确认模式
+    pub fn set_auto_confirm(&mut self, auto: bool) {
+        self.auto_confirm = auto;
     }
 
     /// 获取工具定义列表
@@ -52,6 +63,68 @@ impl Session {
                 },
             })
             .collect()
+    }
+
+    /// 检查工具是否需要确认
+    fn needs_confirmation(&self, tool_name: &str) -> bool {
+        TOOLS_REQUIRING_CONFIRMATION.contains(&tool_name)
+    }
+
+    /// 请求用户确认
+    fn request_confirmation(&self, tool_name: &str, args: &serde_json::Value) -> bool {
+        // 自动确认模式
+        if self.auto_confirm {
+            return true;
+        }
+
+        // 格式化参数显示
+        let args_display = match tool_name {
+            "write_file" => {
+                if let Some(path) = args.get("path") {
+                    if let Some(content) = args.get("content") {
+                        let content_str = content.as_str().unwrap_or("");
+                        let preview = if content_str.len() > 100 {
+                            format!("{}...", &content_str[..100])
+                        } else {
+                            content_str.to_string()
+                        };
+                        format!("路径: {}\n内容预览: {}", path, preview)
+                    } else {
+                        format!("路径: {}", path)
+                    }
+                } else {
+                    args.to_string()
+                }
+            }
+            _ => args.to_string(),
+        };
+
+        println!("\n{}", "=".repeat(50));
+        println!("⚠️  需要确认操作");
+        println!("{}", "=".repeat(50));
+        println!("工具: {}", tool_name);
+        println!("{}", args_display);
+        println!("{}", "=".repeat(50));
+
+        // 使用 inquire 进行确认
+        match inquire::Confirm::new("是否执行此操作?")
+            .with_default(false)
+            .prompt()
+        {
+            Ok(true) => {
+                println!("✓ 已确认，执行操作...");
+                true
+            }
+            Ok(false) => {
+                println!("✗ 已取消");
+                false
+            }
+            Err(e) => {
+                warn!("确认对话框错误: {}", e);
+                println!("✗ 确认失败，已取消");
+                false
+            }
+        }
     }
 
     /// 处理用户输入
@@ -132,8 +205,17 @@ impl Session {
                     println!("\n[调用工具: {}]", tool_name);
                     debug!("工具参数: {}", tool_args);
 
+                    // 检查是否需要确认
+                    let confirmed = if self.needs_confirmation(tool_name) {
+                        self.request_confirmation(tool_name, tool_args)
+                    } else {
+                        true
+                    };
+
                     // 执行工具
-                    let result = if let Some(tool) = self.tools.get(tool_name) {
+                    let result = if !confirmed {
+                        "操作已取消".to_string()
+                    } else if let Some(tool) = self.tools.get(tool_name) {
                         match tool.execute(tool_args.clone()).await {
                             Ok(result) => result,
                             Err(e) => format!("工具执行错误: {}", e),

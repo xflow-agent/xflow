@@ -4,9 +4,15 @@
 
 mod tool;
 mod read_file;
+mod write_file;
+mod list_directory;
+mod search_file;
 
 pub use tool::{Tool, ToolCall, ToolResult, ToolDefinition};
 pub use read_file::ReadFileTool;
+pub use write_file::WriteFileTool;
+pub use list_directory::ListDirectoryTool;
+pub use search_file::SearchFileTool;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -44,6 +50,16 @@ impl ToolRegistry {
     pub fn has(&self, name: &str) -> bool {
         self.tools.contains_key(name)
     }
+    
+    /// 获取需要确认的工具列表
+    pub fn tools_requiring_confirmation(&self) -> Vec<&'static str> {
+        vec!["write_file"]
+    }
+    
+    /// 检查工具是否需要确认
+    pub fn needs_confirmation(&self, name: &str) -> bool {
+        Self::tools_requiring_confirmation(self).contains(&name)
+    }
 }
 
 impl Default for ToolRegistry {
@@ -56,5 +72,8 @@ impl Default for ToolRegistry {
 pub fn create_default_tools() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(ReadFileTool::new()));
+    registry.register(Arc::new(WriteFileTool::new()));
+    registry.register(Arc::new(ListDirectoryTool::new()));
+    registry.register(Arc::new(SearchFileTool::new()));
     registry
 }
