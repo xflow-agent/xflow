@@ -2,7 +2,7 @@
 //!
 //! 用于将 Session 的输出发送到不同目标（控制台、WebSocket 等）
 
-use std::sync::mpsc::Sender;
+use std::sync::{Mutex, Arc};
 
 /// 消息类型
 #[derive(Debug, Clone)]
@@ -54,8 +54,17 @@ pub fn null_callback() -> OutputCallback {
 }
 
 /// 创建通道回调（用于实时发送）
-pub fn channel_callback(tx: Sender<OutputMessage>) -> OutputCallback {
+pub fn channel_callback(tx: std::sync::mpsc::Sender<OutputMessage>) -> OutputCallback {
     Box::new(move |msg| {
         let _ = tx.send(msg);
+    })
+}
+
+/// 创建队列回调（用于收集消息）
+pub fn channel_callback_with_queue(queue: Arc<Mutex<Vec<OutputMessage>>>) -> OutputCallback {
+    Box::new(move |msg| {
+        if let Ok(mut q) = queue.lock() {
+            q.push(msg);
+        }
     })
 }

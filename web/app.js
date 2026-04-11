@@ -155,6 +155,7 @@ class XflowApp {
         
         // 准备接收响应
         this.currentResponse = '';
+        this.toolIndicators = [];  // 工具指示器列表
         this.addMessage('assistant', '', true);
     }
     
@@ -191,7 +192,14 @@ class XflowApp {
         const bubble = document.getElementById('streaming-bubble');
         if (bubble) {
             this.currentResponse += text;
-            bubble.innerHTML = this.formatContent(this.currentResponse);
+            // 使用单独的内容区域，避免覆盖工具指示器
+            let contentArea = bubble.querySelector('.response-content');
+            if (!contentArea) {
+                contentArea = document.createElement('div');
+                contentArea.className = 'response-content';
+                bubble.insertBefore(contentArea, bubble.firstChild);
+            }
+            contentArea.innerHTML = this.formatContent(this.currentResponse);
             this.scrollToBottom();
         }
     }
