@@ -355,9 +355,9 @@ impl Session {
                         format!("未知工具: {}", tool_name)
                     };
 
-                    // 显示结果摘要
-                    let result_preview = if result.len() > 200 {
-                        format!("{}...", &result[..200])
+                    // 显示结果摘要 (安全截断，避免 UTF-8 边界问题)
+                    let result_preview = if result.chars().count() > 200 {
+                        format!("{}...", result.chars().take(200).collect::<String>())
                     } else {
                         result.clone()
                     };
