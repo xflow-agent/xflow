@@ -10,6 +10,7 @@ license.workspace = true
 [dependencies]
 xflow-core.workspace = true
 xflow-model.workspace = true
+xflow-agent.workspace = true
 
 tokio.workspace = true
 clap.workspace = true

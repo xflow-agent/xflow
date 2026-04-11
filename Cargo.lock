@@ -2279,6 +2279,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "xflow-agent",
  "xflow-core",
  "xflow-model",
 ]
