@@ -3,8 +3,12 @@
 use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{debug, info};
-use xflow_model::{Message, ModelProvider, StreamChunk};
+use tracing::{debug, info, warn};
+use xflow_model::{Message, ModelProvider, StreamChunk, ToolCall, ToolDefinition};
+use xflow_tools::ToolRegistry;
+
+/// 最大工具调用循环次数
+const MAX_TOOL_LOOPS: usize = 10;
 
 /// 会话状态
 pub struct Session {
@@ -13,22 +17,41 @@ pub struct Session {
     /// 模型提供者
     provider: Arc<dyn ModelProvider>,
     /// 工作目录
-    #[allow(dead_code)]
     workdir: PathBuf,
     /// 模型名称
     model_name: String,
+    /// 工具注册表
+    tools: ToolRegistry,
 }
 
 impl Session {
     /// 创建新会话
     pub fn new(provider: Arc<dyn ModelProvider>, workdir: PathBuf) -> Self {
         let model_name = provider.model_info().name;
+        let tools = xflow_tools::create_default_tools();
         Self {
             messages: Vec::new(),
             provider,
             workdir,
             model_name,
+            tools,
         }
+    }
+
+    /// 获取工具定义列表
+    fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
+        self.tools
+            .definitions()
+            .into_iter()
+            .map(|td| xflow_model::ToolDefinition {
+                tool_type: td.tool_type,
+                function: xflow_model::FunctionDefinition {
+                    name: td.function.name,
+                    description: td.function.description,
+                    parameters: td.function.parameters,
+                },
+            })
+            .collect()
     }
 
     /// 处理用户输入
@@ -38,38 +61,105 @@ impl Session {
 
         debug!("当前消息数量: {}", self.messages.len());
 
-        // 调用模型（流式）
-        let stream = self.provider.chat_stream(self.messages.clone()).await;
+        // 工具调用循环
+        let mut loop_count = 0;
 
-        // 处理流式响应
-        let mut full_response = String::new();
-        let mut stream = stream;
+        loop {
+            if loop_count >= MAX_TOOL_LOOPS {
+                warn!("达到最大工具调用循环次数: {}", MAX_TOOL_LOOPS);
+                println!("\n[警告: 达到最大循环次数，停止工具调用]");
+                break;
+            }
 
-        use futures::StreamExt;
-        while let Some(chunk) = stream.next().await {
-            match chunk {
-                Ok(StreamChunk { content, done }) => {
-                    if !content.is_empty() {
-                        // 输出内容（实时显示）
-                        print!("{}", content);
-                        full_response.push_str(&content);
+            // 调用模型（流式 + 工具）
+            let tool_defs = self.get_tool_definitions();
+            let stream = self
+                .provider
+                .chat_stream_with_tools(self.messages.clone(), tool_defs)
+                .await;
+
+            // 处理流式响应
+            let mut full_response = String::new();
+            let mut tool_calls: Vec<ToolCall> = Vec::new();
+
+            use futures::StreamExt;
+            let mut stream = stream;
+
+            while let Some(chunk) = stream.next().await {
+                match chunk {
+                    Ok(StreamChunk {
+                        content,
+                        done,
+                        tool_calls: chunk_tool_calls,
+                    }) => {
+                        // 输出文本内容
+                        if !content.is_empty() {
+                            print!("{}", content);
+                            full_response.push_str(&content);
+                        }
+
+                        // 收集工具调用
+                        if !chunk_tool_calls.is_empty() {
+                            tool_calls.extend(chunk_tool_calls);
+                        }
+
+                        if done {
+                            println!(); // 换行
+                            break;
+                        }
                     }
-                    if done {
-                        println!(); // 换行
-                        break;
+                    Err(e) => {
+                        tracing::error!("流式响应错误: {}", e);
+                        println!("\n[错误: {}]", e);
+                        return Err(e.into());
                     }
-                }
-                Err(e) => {
-                    tracing::error!("流式响应错误: {}", e);
-                    println!("\n[错误: {}]", e);
-                    break;
                 }
             }
-        }
 
-        // 添加助手消息到历史
-        if !full_response.is_empty() {
-            self.messages.push(Message::assistant(&full_response));
+            // 如果有工具调用，执行并继续循环
+            if !tool_calls.is_empty() {
+                debug!("收到 {} 个工具调用", tool_calls.len());
+
+                // 添加助手消息（包含工具调用）
+                self.messages
+                    .push(Message::assistant_with_tools(tool_calls.clone()));
+
+                // 执行每个工具调用
+                for tool_call in &tool_calls {
+                    let tool_name = &tool_call.function.name;
+                    let tool_args = &tool_call.function.arguments;
+
+                    println!("\n[调用工具: {}]", tool_name);
+                    debug!("工具参数: {}", tool_args);
+
+                    // 执行工具
+                    let result = if let Some(tool) = self.tools.get(tool_name) {
+                        match tool.execute(tool_args.clone()).await {
+                            Ok(result) => result,
+                            Err(e) => format!("工具执行错误: {}", e),
+                        }
+                    } else {
+                        format!("未知工具: {}", tool_name)
+                    };
+
+                    println!("[工具结果: {} 字节]", result.len());
+                    debug!("工具结果: {}", if result.len() > 200 { &result[..200] } else { &result });
+
+                    // 添加工具结果消息
+                    self.messages
+                        .push(Message::tool_result(tool_name, result));
+                }
+
+                loop_count += 1;
+                continue; // 继续循环，让模型处理工具结果
+            }
+
+            // 没有工具调用，添加助手消息并结束
+            if !full_response.is_empty() {
+                self.messages.push(Message::assistant(&full_response));
+            }
+
+            break;
         }
 
         Ok(())
@@ -89,5 +179,11 @@ impl Session {
     /// 获取消息数量
     pub fn message_count(&self) -> usize {
         self.messages.len()
+    }
+
+    /// 获取工作目录
+    #[allow(dead_code)]
+    pub fn workdir(&self) -> &PathBuf {
+        &self.workdir
     }
 }

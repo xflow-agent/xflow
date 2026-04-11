@@ -24,6 +24,13 @@ pub trait ModelProvider: Send + Sync {
         messages: Vec<Message>,
     ) -> Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Send>>;
 
+    /// 流式发送消息（带工具支持）
+    async fn chat_stream_with_tools(
+        &self,
+        messages: Vec<Message>,
+        tools: Vec<ToolDefinition>,
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Send>>;
+
     /// 获取模型信息
     fn model_info(&self) -> ModelInfo;
 }

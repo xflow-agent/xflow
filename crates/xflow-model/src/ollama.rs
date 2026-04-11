@@ -41,10 +41,12 @@ impl OllamaProvider {
 - 项目结构和依赖分析
 - 调试和错误修复
 - 最佳实践建议
+- 读取项目文件内容
 
-请用清晰、简洁的方式回答用户问题。如果需要执行操作（如读写文件、运行命令），
-请说明你的计划并等待用户确认。
+你可以使用以下工具：
+- read_file: 读取文件内容，参数: {"path": "文件路径"}
 
+当用户要求查看文件内容时，请使用 read_file 工具。
 当前工作目录是用户的项目根目录。"#,
         )
     }
@@ -61,6 +63,7 @@ impl ModelProvider for OllamaProvider {
             model: self.model.clone(),
             messages: all_messages,
             stream: false,
+            tools: vec![],
         };
 
         debug!("发送请求到 Ollama: {:?}", request);
@@ -85,19 +88,28 @@ impl ModelProvider for OllamaProvider {
 
         let content = ollama_resp
             .message
-            .map(|m| m.content)
+            .and_then(|m| m.content)
             .unwrap_or_default();
 
         Ok(Response {
             content,
             model: ollama_resp.model,
             done: ollama_resp.done,
+            tool_calls: vec![],
         })
     }
 
     async fn chat_stream(
         &self,
         messages: Vec<Message>,
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Send>> {
+        self.chat_stream_with_tools(messages, vec![]).await
+    }
+
+    async fn chat_stream_with_tools(
+        &self,
+        messages: Vec<Message>,
+        tools: Vec<ToolDefinition>,
     ) -> Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Send>> {
         // 添加系统消息
         let mut all_messages = vec![self.build_system_message()];
@@ -107,6 +119,7 @@ impl ModelProvider for OllamaProvider {
             model: self.model.clone(),
             messages: all_messages,
             stream: true,
+            tools,
         };
 
         let client = self.client.clone();
@@ -156,15 +169,49 @@ impl ModelProvider for OllamaProvider {
 
                     match serde_json::from_str::<OllamaStreamResponse>(line) {
                         Ok(resp) => {
+                            // 处理文本内容
                             let content = resp
                                 .message
-                                .map(|m| m.content)
+                                .as_ref()
+                                .and_then(|m| m.content.as_ref())
+                                .cloned()
+                                .unwrap_or_default();
+
+                            // 处理工具调用
+                            let tool_calls = resp
+                                .message
+                                .map(|m| m.tool_calls)
                                 .unwrap_or_default();
 
                             if !content.is_empty() {
                                 yield Ok(StreamChunk {
                                     content,
                                     done: false,
+                                    tool_calls: vec![],
+                                });
+                            }
+
+                            if !tool_calls.is_empty() {
+                                // 转换工具调用格式
+                                let converted: Vec<ToolCall> = tool_calls
+                                    .into_iter()
+                                    .map(|tc| ToolCall {
+                                        call_type: if tc.call_type.is_empty() {
+                                            "function".to_string()
+                                        } else {
+                                            tc.call_type
+                                        },
+                                        function: FunctionCall {
+                                            name: tc.function.name,
+                                            arguments: tc.function.arguments,
+                                        },
+                                    })
+                                    .collect();
+
+                                yield Ok(StreamChunk {
+                                    content: String::new(),
+                                    done: false,
+                                    tool_calls: converted,
                                 });
                             }
 
@@ -172,6 +219,7 @@ impl ModelProvider for OllamaProvider {
                                 yield Ok(StreamChunk {
                                     content: String::new(),
                                     done: true,
+                                    tool_calls: vec![],
                                 });
                             }
                         }

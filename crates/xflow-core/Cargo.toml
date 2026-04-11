@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 xflow-model.workspace = true
+xflow-tools.workspace = true
 
 tokio.workspace = true
 serde.workspace = true
