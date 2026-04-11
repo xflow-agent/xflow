@@ -11,10 +11,11 @@ use axum::{
 };
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use tracing::{debug, info, warn};
 
 use crate::state::{AppState, SessionId};
+use xflow_core::{OutputCallback, OutputMessage};
 
 /// WebSocket 消息类型
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,9 +36,11 @@ pub enum WsResponse {
     /// 文本内容（流式）
     Content { text: String },
     /// 工具调用
-    ToolCall { name: String, args: serde_json::Value },
+    ToolCall { name: String },
     /// 工具结果
-    ToolResult { name: String, result: String },
+    ToolResult { name: String, size: usize },
+    /// 循环进度
+    LoopProgress { current: usize, max: usize },
     /// 完成
     Done,
     /// 错误
@@ -68,6 +71,21 @@ async fn ws_handler(
     Query(query): Query<WsQuery>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state, query))
+}
+
+/// 将输出消息转换为 WebSocket 响应
+fn to_response(msg: OutputMessage) -> WsResponse {
+    match msg {
+        OutputMessage::Content(text) => WsResponse::Content { text },
+        OutputMessage::ToolCall { name, .. } => WsResponse::ToolCall { name },
+        OutputMessage::ToolResult { name, result_size } => WsResponse::ToolResult { 
+            name, 
+            size: result_size 
+        },
+        OutputMessage::LoopProgress { current, max } => WsResponse::LoopProgress { current, max },
+        OutputMessage::Done { .. } => WsResponse::Done,
+        OutputMessage::Error(text) => WsResponse::Error { message: text },
+    }
 }
 
 /// 处理 WebSocket 连接
@@ -117,35 +135,52 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, query: WsQuery) 
                 // 处理请求
                 match request {
                     WsRequest::Chat { message } => {
-                        // 发送确认
-                        let _ = sender.send(WsMessage::Text(
-                            serde_json::to_string(&WsResponse::Content { 
-                                text: format!("[处理中: {}]", message) 
-                            }).unwrap_or_default()
-                        )).await;
+                        // 创建消息队列（用于收集 Session 输出）
+                        let output_queue: Arc<StdMutex<Vec<OutputMessage>>> = Arc::new(StdMutex::new(Vec::new()));
+                        let queue_clone = output_queue.clone();
+                        
+                        // 创建输出回调
+                        let output_callback: OutputCallback = Box::new(move |msg| {
+                            if let Ok(mut queue) = queue_clone.lock() {
+                                queue.push(msg);
+                            }
+                        });
                         
                         // 获取会话并处理
                         if let Some(session) = state.get_session(session_id).await {
                             let mut session = session.lock().await;
+                            session.set_output(output_callback);
+                            session.set_auto_confirm(true); // Web 端自动确认
                             
                             // 处理消息
-                            match session.process(&message).await {
-                                Ok(_) => {
-                                    // 发送完成信号
-                                    let done = WsResponse::Done;
-                                    if let Ok(json) = serde_json::to_string(&done) {
-                                        let _ = sender.send(WsMessage::Text(json)).await;
-                                    }
-                                }
-                                Err(e) => {
-                                    let error = WsResponse::Error {
-                                        message: e.to_string(),
-                                    };
-                                    if let Ok(json) = serde_json::to_string(&error) {
-                                        let _ = sender.send(WsMessage::Text(json)).await;
-                                    }
+                            if let Err(e) = session.process(&message).await {
+                                let error = WsResponse::Error { message: e.to_string() };
+                                if let Ok(json) = serde_json::to_string(&error) {
+                                    let _ = sender.send(WsMessage::Text(json)).await;
                                 }
                             }
+                        }
+                        
+                        // 发送收集的消息
+                        let messages: Vec<OutputMessage> = {
+                            if let Ok(mut queue) = output_queue.lock() {
+                                std::mem::take(&mut *queue)
+                            } else {
+                                Vec::new()
+                            }
+                        };
+                        
+                        for msg in messages {
+                            let response = to_response(msg);
+                            if let Ok(json) = serde_json::to_string(&response) {
+                                let _ = sender.send(WsMessage::Text(json)).await;
+                            }
+                        }
+                        
+                        // 发送完成信号
+                        let done = WsResponse::Done;
+                        if let Ok(json) = serde_json::to_string(&done) {
+                            let _ = sender.send(WsMessage::Text(json)).await;
                         }
                     }
                     WsRequest::Clear => {
@@ -183,6 +218,5 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, query: WsQuery) 
         }
     }
     
-    // 连接关闭时的清理
     debug!("WebSocket 连接结束, session_id: {}", session_id);
 }

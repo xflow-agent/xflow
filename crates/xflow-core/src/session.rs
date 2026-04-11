@@ -8,6 +8,7 @@ use xflow_model::{Message, ModelProvider, StreamChunk, ToolCall, ToolDefinition}
 use xflow_tools::ToolRegistry;
 use xflow_context::ContextBuilder;
 use xflow_agent::{ReviewerAgent, CoderAgent, Agent, AgentContext, Task, TaskType, TaskStatus};
+use crate::{OutputCallback, OutputMessage, console_callback};
 
 /// 最大工具调用循环次数
 const MAX_TOOL_LOOPS: usize = 20;
@@ -87,6 +88,8 @@ pub struct Session {
     system_added: bool,
     /// 项目上下文信息（可选）
     project_context: Option<String>,
+    /// 输出回调
+    output: OutputCallback,
 }
 
 impl Session {
@@ -103,7 +106,35 @@ impl Session {
             auto_confirm: false,
             system_added: false,
             project_context: None,
+            output: console_callback(),
         }
+    }
+
+    /// 创建带自定义输出的会话
+    pub fn with_output(provider: Arc<dyn ModelProvider>, workdir: PathBuf, output: OutputCallback) -> Self {
+        let model_name = provider.model_info().name;
+        let tools = xflow_tools::create_default_tools();
+        Self {
+            messages: Vec::new(),
+            provider,
+            workdir,
+            model_name,
+            tools,
+            auto_confirm: false,
+            system_added: false,
+            project_context: None,
+            output,
+        }
+    }
+
+    /// 设置输出回调
+    pub fn set_output(&mut self, output: OutputCallback) {
+        self.output = output;
+    }
+
+    /// 设置自动确认模式
+    pub fn set_auto_confirm(&mut self, auto: bool) {
+        self.auto_confirm = auto;
     }
 
     /// 初始化项目上下文（扫描项目并生成上下文信息）
@@ -126,11 +157,6 @@ impl Session {
         }
         
         Ok(())
-    }
-
-    /// 设置自动确认模式
-    pub fn set_auto_confirm(&mut self, auto: bool) {
-        self.auto_confirm = auto;
     }
 
     /// 获取工具定义列表
@@ -270,14 +296,18 @@ impl Session {
         loop {
             if loop_count >= MAX_TOOL_LOOPS {
                 warn!("达到最大工具调用循环次数: {}", MAX_TOOL_LOOPS);
-                println!("\n⚠️ 已达到最大循环次数 ({}), 停止自动执行", MAX_TOOL_LOOPS);
-                println!("💡 你可以继续对话，让模型完成剩余任务");
+                (self.output)(OutputMessage::Error(format!(
+                    "已达到最大循环次数 ({}), 停止自动执行", MAX_TOOL_LOOPS
+                )));
                 break;
             }
 
             // 显示循环进度（非首次）
             if loop_count > 0 {
-                println!("\n── 自动执行 (第 {}/{} 轮) ──", loop_count + 1, MAX_TOOL_LOOPS);
+                (self.output)(OutputMessage::LoopProgress { 
+                    current: loop_count + 1, 
+                    max: MAX_TOOL_LOOPS 
+                });
             }
 
             // 调用模型（流式 + 工具）
@@ -303,7 +333,7 @@ impl Session {
                     }) => {
                         // 输出文本内容
                         if !content.is_empty() {
-                            print!("{}", content);
+                            (self.output)(OutputMessage::Content(content.clone()));
                             full_response.push_str(&content);
                         }
 
@@ -313,13 +343,12 @@ impl Session {
                         }
 
                         if done {
-                            println!(); // 换行
                             break;
                         }
                     }
                     Err(e) => {
                         tracing::error!("流式响应错误: {}", e);
-                        println!("\n[错误: {}]", e);
+                        (self.output)(OutputMessage::Error(e.to_string()));
                         return Err(e.into());
                     }
                 }
@@ -339,11 +368,14 @@ impl Session {
                     let tool_args = &tool_call.function.arguments;
 
                     // 工具调用进度
-                    if tool_calls.len() > 1 {
-                        println!("\n[调用工具 {}/{}: {}]", i + 1, tool_calls.len(), tool_name);
-                    } else {
-                        println!("\n[调用工具: {}]", tool_name);
-                    }
+                    (self.output)(OutputMessage::ToolCall {
+                        name: tool_name.clone(),
+                        args: if tool_calls.len() > 1 {
+                            format!("{}/{}", i + 1, tool_calls.len())
+                        } else {
+                            String::new()
+                        },
+                    });
                     debug!("工具参数: {}", tool_args);
 
                     // 检查是否需要确认
@@ -377,7 +409,10 @@ impl Session {
                     } else {
                         result.clone()
                     };
-                    println!("[结果: {} 字节]", result.len());
+                    (self.output)(OutputMessage::ToolResult {
+                        name: tool_name.clone(),
+                        result_size: result.len(),
+                    });
                     debug!("工具结果: {}", result_preview);
 
                     // 添加工具结果消息
@@ -398,8 +433,10 @@ impl Session {
 
             // 显示执行统计
             if total_tools_called > 0 {
-                println!("\n✅ 任务完成 (共调用 {} 次工具, {} 轮循环)", 
-                    total_tools_called, loop_count);
+                (self.output)(OutputMessage::Done { 
+                    tools_called: total_tools_called, 
+                    loops: loop_count 
+                });
             }
 
             break;

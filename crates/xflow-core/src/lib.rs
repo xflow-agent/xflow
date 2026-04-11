@@ -3,6 +3,8 @@
 //! 负责会话管理、消息处理和工具调用
 
 mod session;
+mod output;
 
 pub use session::*;
+pub use output::*;
 pub use xflow_model::{Message, Role};

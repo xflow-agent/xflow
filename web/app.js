@@ -107,11 +107,15 @@ class XflowApp {
                 break;
                 
             case 'tool_call':
-                this.showToolCall(data.name, data.args);
+                this.showToolCall(data.name);
                 break;
                 
             case 'tool_result':
-                this.showToolResult(data.name, data.result);
+                this.showToolResult(data.name, data.size);
+                break;
+                
+            case 'loop_progress':
+                this.showLoopProgress(data.current, data.max);
                 break;
                 
             case 'done':
@@ -200,23 +204,40 @@ class XflowApp {
         this.currentResponse = '';
     }
     
-    showToolCall(name, args) {
+    showToolCall(name) {
         const bubble = document.getElementById('streaming-bubble');
         if (bubble) {
             const indicator = document.createElement('div');
             indicator.className = 'tool-indicator';
             indicator.innerHTML = `
                 <span class="spinner"></span>
-                <span>${name}</span>
+                <span>调用工具: ${name}</span>
             `;
             bubble.appendChild(indicator);
             this.scrollToBottom();
         }
     }
     
-    showToolResult(name, result) {
-        // 可以显示工具结果摘要
-        console.log(`工具 ${name} 完成:`, result);
+    showToolResult(name, size) {
+        const bubble = document.getElementById('streaming-bubble');
+        if (bubble) {
+            const result = document.createElement('div');
+            result.className = 'tool-indicator';
+            result.innerHTML = `<span>✓ ${name}: ${size} 字节</span>`;
+            bubble.appendChild(result);
+            this.scrollToBottom();
+        }
+    }
+    
+    showLoopProgress(current, max) {
+        const bubble = document.getElementById('streaming-bubble');
+        if (bubble) {
+            const progress = document.createElement('div');
+            progress.className = 'tool-indicator';
+            progress.innerHTML = `<span>── 自动执行 (第 ${current}/${max} 轮) ──</span>`;
+            bubble.appendChild(progress);
+            this.scrollToBottom();
+        }
     }
     
     showError(message) {
