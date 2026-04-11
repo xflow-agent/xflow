@@ -68,3 +68,14 @@ pub fn channel_callback_with_queue(queue: Arc<Mutex<Vec<OutputMessage>>>) -> Out
         }
     })
 }
+
+/// 创建实时回调（用于 WebSocket 实时发送）
+///
+/// 使用 tokio::sync::mpsc::UnboundedSender，可以在同步回调中发送，
+/// 后台任务接收后立即发送到 WebSocket。
+pub fn realtime_callback(tx: tokio::sync::mpsc::UnboundedSender<OutputMessage>) -> OutputCallback {
+    Box::new(move |msg| {
+        // UnboundedSender::send 是非阻塞的，适合在同步回调中使用
+        let _ = tx.send(msg);
+    })
+}

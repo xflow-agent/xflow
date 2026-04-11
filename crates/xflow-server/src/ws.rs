@@ -11,7 +11,7 @@ use axum::{
 };
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::state::{AppState, SessionId};
@@ -137,50 +137,98 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, query: WsQuery) 
                 // 处理请求
                 match request {
                     WsRequest::Chat { message } => {
-                        // 创建消息队列
-                        let output_queue: Arc<StdMutex<Vec<OutputMessage>>> = 
-                            Arc::new(StdMutex::new(Vec::new()));
-                        let queue_clone = output_queue.clone();
+                        // 创建输出通道
+                        let (output_tx, mut output_rx) = 
+                            tokio::sync::mpsc::unbounded_channel::<OutputMessage>();
                         
-                        // 创建输出回调
-                        let output_callback = xflow_core::channel_callback_with_queue(queue_clone);
+                        // 获取会话 Arc
+                        let session_arc = match state.get_session(session_id).await {
+                            Some(s) => s,
+                            None => {
+                                let error = WsResponse::Error { 
+                                    message: "会话不存在".to_string() 
+                                };
+                                if let Ok(json) = serde_json::to_string(&error) {
+                                    let _ = sender.send(WsMessage::Text(json)).await;
+                                }
+                                continue;
+                            }
+                        };
                         
-                        // 获取会话并处理
-                        let process_result = if let Some(session) = state.get_session(session_id).await {
-                            let mut session = session.lock().await;
-                            session.set_output(output_callback);
+                        // 设置回调（需要 lock）
+                        {
+                            let mut session = session_arc.lock().await;
+                            session.set_output(xflow_core::realtime_callback(output_tx.clone()));
                             session.set_auto_confirm(true);
-                            session.process(&message).await
-                        } else {
-                            Err(anyhow::anyhow!("会话不存在"))
-                        };
-                        
-                        // 发送收集的消息
-                        let messages: Vec<OutputMessage> = {
-                            if let Ok(mut queue) = output_queue.lock() {
-                                std::mem::take(&mut *queue)
-                            } else {
-                                Vec::new()
-                            }
-                        };
-                        
-                        for msg in messages {
-                            let response = to_response(msg);
-                            if let Ok(json) = serde_json::to_string(&response) {
-                                let _ = sender.send(WsMessage::Text(json)).await;
-                            }
                         }
                         
-                        // 处理错误或发送完成信号
-                        if let Err(e) = process_result {
-                            let error = WsResponse::Error { message: e.to_string() };
-                            if let Ok(json) = serde_json::to_string(&error) {
-                                let _ = sender.send(WsMessage::Text(json)).await;
-                            }
-                        } else {
-                            let done = WsResponse::Done;
-                            if let Ok(json) = serde_json::to_string(&done) {
-                                let _ = sender.send(WsMessage::Text(json)).await;
+                        // 在独立任务中运行 process
+                        let mut process_handle = tokio::spawn(async move {
+                            let mut session = session_arc.lock().await;
+                            session.process(&message).await
+                        });
+                        
+                        // 使用 select! 同时处理输出和等待 process 完成
+                        loop {
+                            tokio::select! {
+                                // 接收输出并发送
+                                output_msg = output_rx.recv() => {
+                                    match output_msg {
+                                        Some(msg) => {
+                                            let response = to_response(msg);
+                                            if let Ok(json) = serde_json::to_string(&response) {
+                                                if sender.send(WsMessage::Text(json)).await.is_err() {
+                                                    debug!("WebSocket 发送失败，断开连接");
+                                                    return;
+                                                }
+                                            }
+                                        }
+                                        None => {
+                                            // 通道关闭，所有消息已发送
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                // 等待 process 完成
+                                result = &mut process_handle => {
+                                    // 发送所有剩余消息
+                                    while let Ok(msg) = output_rx.try_recv() {
+                                        let response = to_response(msg);
+                                        if let Ok(json) = serde_json::to_string(&response) {
+                                            if sender.send(WsMessage::Text(json)).await.is_err() {
+                                                return;
+                                            }
+                                        }
+                                    }
+                                    
+                                    // 发送完成/错误信号
+                                    match result {
+                                        Ok(Ok(_)) => {
+                                            let done = WsResponse::Done;
+                                            if let Ok(json) = serde_json::to_string(&done) {
+                                                let _ = sender.send(WsMessage::Text(json)).await;
+                                            }
+                                        }
+                                        Ok(Err(e)) => {
+                                            let error = WsResponse::Error { 
+                                                message: e.to_string() 
+                                            };
+                                            if let Ok(json) = serde_json::to_string(&error) {
+                                                let _ = sender.send(WsMessage::Text(json)).await;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let error = WsResponse::Error { 
+                                                message: format!("任务错误: {}", e) 
+                                            };
+                                            if let Ok(json) = serde_json::to_string(&error) {
+                                                let _ = sender.send(WsMessage::Text(json)).await;
+                                            }
+                                        }
+                                    }
+                                    break;
+                                }
                             }
                         }
                     }
