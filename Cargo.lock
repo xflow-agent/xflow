@@ -2771,6 +2771,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "uuid",
  "xflow-agent",
  "xflow-context",
  "xflow-model",

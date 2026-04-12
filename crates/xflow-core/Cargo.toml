@@ -22,3 +22,4 @@ anyhow.workspace = true
 tracing.workspace = true
 futures.workspace = true
 inquire.workspace = true
+uuid.workspace = true

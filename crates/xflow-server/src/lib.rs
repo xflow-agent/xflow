@@ -5,7 +5,9 @@
 mod api;
 mod ws;
 mod state;
+mod ws_interaction;
 
 pub use api::*;
 pub use ws::*;
 pub use state::*;
+pub use ws_interaction::*;

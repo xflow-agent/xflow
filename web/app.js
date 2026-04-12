@@ -129,7 +129,122 @@ class XflowApp {
             case 'pong':
                 // 心跳响应，忽略
                 break;
+                
+            case 'confirmation_request':
+                this.handleConfirmationRequest(data);
+                break;
         }
+    }
+    
+    // 处理确认请求
+    handleConfirmationRequest(data) {
+        const { id, tool, message, danger_level, danger_reason } = data;
+        
+        // 显示确认对话框
+        this.showConfirmationDialog({
+            id,
+            tool,
+            message,
+            dangerLevel: danger_level,
+            dangerReason: danger_reason
+        });
+    }
+    
+    // 显示确认对话框
+    showConfirmationDialog(request) {
+        // 创建对话框元素
+        const dialog = document.createElement('div');
+        dialog.className = 'confirmation-dialog';
+        dialog.id = `dialog-${request.id}`;
+        
+        // 根据危险级别设置样式
+        const dangerEmoji = {
+            0: '⚠️',
+            1: '🟡',
+            2: '🟠',
+            3: '🔴'
+        };
+        
+        const dangerText = {
+            0: '需要确认',
+            1: '中度危险',
+            2: '高度危险',
+            3: '极度危险'
+        };
+        
+        const level = request.dangerLevel || 0;
+        
+        dialog.innerHTML = `
+            <div class="dialog-backdrop"></div>
+            <div class="dialog-content ${level >= 2 ? 'danger' : ''}">
+                <div class="dialog-header">
+                    <span class="danger-indicator">${dangerEmoji[level] || '⚠️'}</span>
+                    <h3>${dangerText[level] || '需要确认'}</h3>
+                </div>
+                <div class="dialog-body">
+                    <div class="tool-name">工具: <code>${this.escapeHtml(request.tool)}</code></div>
+                    <div class="tool-message">
+                        <pre>${this.escapeHtml(request.message)}</pre>
+                    </div>
+                    ${request.dangerReason ? `
+                        <div class="danger-reason">
+                            <strong>原因:</strong> ${this.escapeHtml(request.dangerReason)}
+                        </div>
+                    ` : ''}
+                </div>
+                <div class="dialog-actions">
+                    <button class="btn-cancel" id="cancel-${request.id}">取消</button>
+                    <button class="btn-confirm ${level >= 2 ? 'danger' : ''}" id="confirm-${request.id}">
+                        ${level >= 2 ? '强制执行' : '确认执行'}
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(dialog);
+        
+        // 绑定按钮事件
+        const confirmBtn = document.getElementById(`confirm-${request.id}`);
+        const cancelBtn = document.getElementById(`cancel-${request.id}`);
+        const backdrop = dialog.querySelector('.dialog-backdrop');
+        
+        const sendResponse = (approved) => {
+            // 发送响应
+            this.ws.send(JSON.stringify({
+                type: 'confirmation_response',
+                id: request.id,
+                approved: approved
+            }));
+            
+            // 关闭对话框
+            dialog.remove();
+        };
+        
+        confirmBtn.addEventListener('click', () => sendResponse(true));
+        cancelBtn.addEventListener('click', () => sendResponse(false));
+        backdrop.addEventListener('click', () => sendResponse(false));
+        
+        // 键盘事件
+        const handleKeydown = (e) => {
+            if (e.key === 'Escape') {
+                sendResponse(false);
+                document.removeEventListener('keydown', handleKeydown);
+            } else if (e.key === 'Enter' && e.ctrlKey) {
+                sendResponse(true);
+                document.removeEventListener('keydown', handleKeydown);
+            }
+        };
+        document.addEventListener('keydown', handleKeydown);
+        
+        // 聚焦确认按钮
+        confirmBtn.focus();
+    }
+    
+    // HTML 转义
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
     
     sendMessage() {

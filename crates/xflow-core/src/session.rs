@@ -9,6 +9,7 @@ use xflow_tools::ToolRegistry;
 use xflow_context::ContextBuilder;
 use xflow_agent::{ReviewerAgent, CoderAgent, Agent, AgentContext, Task, TaskType, TaskStatus};
 use crate::{OutputCallback, OutputMessage, console_callback};
+use crate::interaction::{Interaction, CliInteraction, ConfirmationRequest};
 
 /// 最大工具调用循环次数
 const MAX_TOOL_LOOPS: usize = 20;
@@ -82,8 +83,8 @@ pub struct Session {
     model_name: String,
     /// 工具注册表
     tools: ToolRegistry,
-    /// 是否自动确认（跳过确认对话框）
-    auto_confirm: bool,
+    /// 交互接口
+    interaction: Box<dyn Interaction>,
     /// 是否已添加系统提示词
     system_added: bool,
     /// 项目上下文信息（可选）
@@ -93,7 +94,7 @@ pub struct Session {
 }
 
 impl Session {
-    /// 创建新会话
+    /// 创建新会话（使用 CLI 交互）
     pub fn new(provider: Arc<dyn ModelProvider>, workdir: PathBuf) -> Self {
         let model_name = provider.model_info().name;
         let tools = xflow_tools::create_default_tools();
@@ -103,7 +104,7 @@ impl Session {
             workdir,
             model_name,
             tools,
-            auto_confirm: false,
+            interaction: Box::new(CliInteraction::new()),
             system_added: false,
             project_context: None,
             output: console_callback(),
@@ -120,10 +121,31 @@ impl Session {
             workdir,
             model_name,
             tools,
-            auto_confirm: false,
+            interaction: Box::new(CliInteraction::new()),
             system_added: false,
             project_context: None,
             output,
+        }
+    }
+
+    /// 创建带自定义交互的会话
+    pub fn with_interaction(
+        provider: Arc<dyn ModelProvider>, 
+        workdir: PathBuf, 
+        interaction: Box<dyn Interaction>
+    ) -> Self {
+        let model_name = provider.model_info().name;
+        let tools = xflow_tools::create_default_tools();
+        Self {
+            messages: Vec::new(),
+            provider,
+            workdir,
+            model_name,
+            tools,
+            interaction,
+            system_added: false,
+            project_context: None,
+            output: console_callback(),
         }
     }
 
@@ -132,9 +154,18 @@ impl Session {
         self.output = output;
     }
 
-    /// 设置自动确认模式
+    /// 设置交互接口
+    pub fn set_interaction(&mut self, interaction: Box<dyn Interaction>) {
+        self.interaction = interaction;
+    }
+
+    /// 设置自动确认模式（便捷方法，向后兼容）
     pub fn set_auto_confirm(&mut self, auto: bool) {
-        self.auto_confirm = auto;
+        if auto {
+            self.interaction = Box::new(crate::interaction::AutoConfirmInteraction::approving());
+        } else {
+            self.interaction = Box::new(CliInteraction::new());
+        }
     }
 
     /// 初始化项目上下文（扫描项目并生成上下文信息）
@@ -180,15 +211,10 @@ impl Session {
         TOOLS_REQUIRING_CONFIRMATION.contains(&tool_name)
     }
 
-    /// 请求用户确认
-    fn request_confirmation(&self, tool_name: &str, args: &serde_json::Value) -> bool {
-        // 自动确认模式
-        if self.auto_confirm {
-            return true;
-        }
-
+    /// 构建确认请求
+    fn build_confirmation_request(&self, tool_name: &str, args: &serde_json::Value) -> ConfirmationRequest {
         // 格式化参数显示
-        let (args_display, danger_info) = match tool_name {
+        let (message, danger_level, danger_reason) = match tool_name {
             "write_file" => {
                 if let Some(path) = args.get("path") {
                     if let Some(content) = args.get("content") {
@@ -198,77 +224,44 @@ impl Session {
                         } else {
                             content_str.to_string()
                         };
-                        (format!("路径: {}\n内容预览: {}", path, preview), None)
+                        (format!("路径: {}\n内容预览: {}", path, preview), 0, None)
                     } else {
-                        (format!("路径: {}", path), None)
+                        (format!("路径: {}", path), 0, None)
                     }
                 } else {
-                    (args.to_string(), None)
+                    (args.to_string(), 0, None)
                 }
             }
             "run_shell" => {
                 if let Some(cmd) = args.get("command").and_then(|c| c.as_str()) {
                     // 分析命令危险程度
                     let analysis = xflow_tools::analyze_command(cmd);
-                    let danger_info = if analysis.is_dangerous {
-                        Some((analysis.level, analysis.reason.clone()))
+                    let (level, reason) = if analysis.is_dangerous {
+                        (analysis.level, Some(analysis.reason.clone()))
                     } else {
-                        None
+                        (0, None)
                     };
-                    (format!("命令: {}", cmd), danger_info)
+                    (format!("命令: {}", cmd), level, reason)
                 } else {
-                    (args.to_string(), None)
+                    (args.to_string(), 0, None)
                 }
             }
-            _ => (args.to_string(), None),
+            _ => (args.to_string(), 0, None),
         };
 
-        // 显示确认对话框
-        println!("\n{}", "=".repeat(50));
-        
-        // 如果是危险命令，显示警告
-        if let Some((level, reason)) = &danger_info {
-            let level_display = match level {
-                3 => "🔴 极度危险",
-                2 => "🟠 高度危险",
-                1 => "🟡 中度危险",
-                _ => "⚠️ 需要注意",
-            };
-            println!("{} - {}", level_display, reason);
-        } else {
-            println!("⚠️  需要确认操作");
+        let mut req = ConfirmationRequest::new(tool_name, message);
+        if danger_level > 0 {
+            req.danger_level = danger_level;
+            req.danger_reason = danger_reason;
         }
-        
-        println!("{}", "=".repeat(50));
-        println!("工具: {}", tool_name);
-        println!("{}", args_display);
-        println!("{}", "=".repeat(50));
+        req
+    }
 
-        // 使用 inquire 进行确认
-        let confirm_msg = if danger_info.is_some() {
-            "⚠️  确认执行此危险操作?"
-        } else {
-            "是否执行此操作?"
-        };
-        
-        match inquire::Confirm::new(confirm_msg)
-            .with_default(false)
-            .prompt()
-        {
-            Ok(true) => {
-                println!("✓ 已确认，执行操作...");
-                true
-            }
-            Ok(false) => {
-                println!("✗ 已取消");
-                false
-            }
-            Err(e) => {
-                warn!("确认对话框错误: {}", e);
-                println!("✗ 确认失败，已取消");
-                false
-            }
-        }
+    /// 请求用户确认（异步版本）
+    async fn request_confirmation(&self, tool_name: &str, args: &serde_json::Value) -> bool {
+        let req = self.build_confirmation_request(tool_name, args);
+        let result = self.interaction.request_confirmation(req).await;
+        result.approved
     }
 
     /// 处理用户输入
@@ -380,7 +373,7 @@ impl Session {
 
                     // 检查是否需要确认
                     let confirmed = if self.needs_confirmation(tool_name) {
-                        self.request_confirmation(tool_name, tool_args)
+                        self.request_confirmation(tool_name, tool_args).await
                     } else {
                         true
                     };
