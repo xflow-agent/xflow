@@ -41,7 +41,7 @@ impl Tool for ReviewerAgentTool {
     }
 
     fn description(&self) -> &str {
-        "【重要】项目分析工具。当用户要求'分析项目'、'分析功能'、'分析架构'、'了解项目结构'等时，**必须**调用此工具，不要直接使用 read_file。此工具会自动执行完整的多步骤分析流程。参数: task - 分析任务描述。"
+        "【重要】项目分析工具。当用户要求'分析项目'、'分析功能'、'分析架构'、'了解项目结构'等时，**必须**调用此工具，不要直接使用 read_file。此工具会启动 ReviewerAgent 执行完整的多步骤分析流程（自动读取配置、分析模块、生成报告）。参数: task - 分析任务描述。"
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -122,7 +122,7 @@ impl Tool for CoderAgentTool {
     }
 
     fn description(&self) -> &str {
-        "【重要】功能实现工具。当用户要求'实现xxx功能'、'添加xxx功能'、'创建xxx'、'编写xxx'等时，**必须**调用此工具。参数: task - 实现任务描述, target_file - 可选的目标文件路径。"
+        "【重要】功能实现工具。当用户要求'实现xxx功能'、'添加xxx功能'、'创建xxx'、'编写xxx'等时，**必须**调用此工具。此工具会启动 CoderAgent 执行完整的多步骤实现流程（分析需求、设计、编码、验证）。参数: task - 实现任务描述, target_file - 可选的目标文件路径。"
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

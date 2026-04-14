@@ -198,7 +198,16 @@ impl Tool for RunShellTool {
     async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
         let params: RunShellArgs = serde_json::from_value(args)?;
 
-        debug!("执行命令: {}", params.command);
+        // 执行危险命令分析（用于审计日志和额外安全层）
+        let analysis = analyze_command(&params.command);
+        if analysis.is_dangerous {
+            warn!(
+                "执行危险命令 [等级{}]: {} - 原因: {}",
+                analysis.level, params.command, analysis.reason
+            );
+        }
+        
+        debug!("执行命令: {} (危险等级: {})", params.command, analysis.level);
 
         // 构建命令
         let mut cmd = Command::new("bash");

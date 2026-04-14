@@ -7,7 +7,7 @@ use rustyline::{DefaultEditor, Editor};
 use std::path::Path;
 use std::sync::Arc;
 use xflow_core::Session;
-use xflow_model::OllamaProvider;
+use xflow_model::ModelProvider;
 
 /// REPL 交互界面
 pub struct Repl {
@@ -17,7 +17,7 @@ pub struct Repl {
 
 impl Repl {
     /// 创建新的 REPL 实例
-    pub fn new(model: &str, host: &str, workdir: &Path) -> Result<Self> {
+    pub fn new(provider: Arc<dyn ModelProvider>, model: &str, workdir: &Path) -> Result<Self> {
         // 初始化编辑器
         let mut editor = DefaultEditor::new()
             .context("无法初始化 rustyline 编辑器")?;
@@ -31,19 +31,19 @@ impl Repl {
             let _ = editor.load_history(&history_path);
         }
 
-        // 初始化模型提供者
-        let provider = Arc::new(OllamaProvider::new(host.to_string(), model.to_string()));
-
         // 初始化会话
-        let mut session = Session::new(provider.clone(), workdir.to_path_buf());
+        let mut session = Session::new(provider, workdir.to_path_buf());
+
+        // 获取完整的工作目录路径
+        let full_workdir = workdir.canonicalize().unwrap_or_else(|_| workdir.to_path_buf());
         
-        // 初始化项目上下文
+        // 打印欢迎信息（显示完整工作目录和模型）
+        print_welcome(&full_workdir, model);
+        
+        // 初始化项目上下文（静默初始化）
         if let Err(e) = session.init_project_context() {
             tracing::warn!("项目上下文初始化失败: {}", e);
         }
-
-        // 打印欢迎信息
-        print_welcome();
 
         Ok(Self { 
             editor, 
@@ -55,7 +55,7 @@ impl Repl {
     pub async fn run(&mut self) -> Result<()> {
         loop {
             // 读取用户输入
-            let readline = self.editor.readline("xflow> ");
+            let readline = self.editor.readline("\x1b[1;36mxflow>\x1b[0m ");
 
             match readline {
                 Ok(line) => {
@@ -133,18 +133,43 @@ impl Repl {
 }
 
 /// 打印欢迎信息
-fn print_welcome() {
-    println!(
-        r#"
-╔═════════════════════════════════════════╗
-║           xflow - 心流编程助手           ║
-║                                         ║
-║  输入 /help 查看帮助                    ║
-║  输入 /exit 退出                        ║
-╚═════════════════════════════════════════╝
-"#
-    );
+fn print_welcome(workdir: &Path, model: &str) {
+    // ASCII art logo - XFLOW (更清晰的字体)
+    let logo: [&str; 6] = [
+        "██╗  ██╗███████╗██╗      ██████╗ ██╗    ██╗",
+        "╚██╗██╔╝██╔════╝██║     ██╔═══██╗██║    ██║",
+        " ╚███╔╝ █████╗  ██║     ██║   ██║██║ █╗ ██║",
+        " ██╔██╗ ██╔══╝  ██║     ██║   ██║██║███╗██║",
+        "██╔╝ ██╗██║     ███████╗╚██████╔╝╚███╔███╔╝",
+        "╚═╝  ╚═╝╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝ ",
+    ];
+    
+    // 右侧信息 (与logo顶部对齐)
+    let version = env!("CARGO_PKG_VERSION");
+    let info: [String; 6] = [
+        format!("\x1b[1;36mXFlow\x1b[0m 心流 AI 编程助手"),
+        format!("\x1b[90m版本号: {}\x1b[0m", version),
+        String::new(),
+        format!("\x1b[90m当前模型:\x1b[0m {}", model),
+        format!("\x1b[90m工作目录:\x1b[0m {}", workdir.display()),
+        String::new(),
+    ];
+    
+    println!();
+    
+    // 逐行输出 logo + info
+    for i in 0..logo.len() {
+        let left = logo[i];
+        let right = &info[i];
+        println!("{}  {}", left, right);
+    }
+    
+    println!();
+    println!("  Hi～今天想做点什么？");
+    println!();
 }
+
+
 
 /// 打印帮助信息
 fn print_help() {

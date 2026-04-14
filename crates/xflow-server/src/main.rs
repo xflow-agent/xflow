@@ -10,13 +10,14 @@ use axum::{
 };
 use clap::Parser;
 use tower_http::{
-    cors::{Any, CorsLayer},
+    cors::{CorsLayer, AllowOrigin},
     services::ServeDir,
     trace::TraceLayer,
 };
+use axum::http::{Method, header, HeaderValue};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use xflow_model::OllamaProvider;
+use xflow_model::{ModelProvider, OpenAIProvider};
 use xflow_server::{create_api_router, create_ws_router, AppState};
 
 /// xflow Web API 服务器
@@ -27,12 +28,19 @@ struct Args {
     #[arg(short, long, default_value = "127.0.0.1:3000")]
     addr: String,
 
-    /// Ollama 地址
-    #[arg(short, long, default_value = "http://localhost:11434")]
-    ollama: String,
+    /// API 基础 URL
+    /// - vLLM: http://localhost:8000/v1
+    /// - OpenAI: https://api.openai.com/v1
+    /// - Ollama: http://localhost:11434/v1
+    #[arg(short, long, default_value = "http://172.21.246.100:8000/v1")]
+    base_url: String,
+
+    /// API Key (OpenAI/vLLM 可选)
+    #[arg(short = 'k', long, default_value = "sk-kmgyfhiuf2imftm9l2w0kdw3sgquqbab")]
+    api_key: Option<String>,
 
     /// 模型名称
-    #[arg(short, long, default_value = "gemma4:e4b")]
+    #[arg(short, long, default_value = "qwen3.5-27b")]
     model: String,
 
     /// 工作目录
@@ -60,14 +68,16 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("启动 xflow Web 服务器");
     tracing::info!("  监听地址: {}", args.addr);
-    tracing::info!("  Ollama: {}", args.ollama);
+    tracing::info!("  Base URL: {}", args.base_url);
     tracing::info!("  模型: {}", args.model);
     tracing::info!("  工作目录: {}", args.workdir);
 
-    // 创建模型提供者
-    let provider = Arc::new(OllamaProvider::new(
-        args.ollama,
+    // 创建模型提供者 (OpenAI 兼容模式)
+    let provider: Arc<dyn ModelProvider> = Arc::new(OpenAIProvider::new(
+        args.base_url,
+        args.api_key,
         args.model,
+        "openai-compatible".to_string(),
     ));
 
     // 创建应用状态
@@ -86,12 +96,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(|| async { "OK" }))
         // 静态文件服务
         .fallback_service(ServeDir::new(&args.static_dir))
-        // CORS
+        // CORS - 限制允许的来源
         .layer(
             CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any)
+                .allow_origin(AllowOrigin::list([
+                    HeaderValue::from_static("http://localhost:3000"),
+                    HeaderValue::from_static("http://127.0.0.1:3000"),
+                    HeaderValue::from_static("http://localhost:11434"),  // Ollama 默认端口
+                ]))
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+                .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
         )
         // 日志
         .layer(TraceLayer::new_for_http());

@@ -5,7 +5,8 @@
 use crate::tool::Tool;
 use async_trait::async_trait;
 use serde::Deserialize;
-use std::process::Command;
+use tokio::process::Command;
+use std::process::Stdio;
 
 /// git_status 参数
 #[derive(Debug, Deserialize)]
@@ -73,16 +74,18 @@ struct GitCommitArgs {
     add_all: bool,
 }
 
-/// 执行 git 命令的辅助函数
-fn run_git(args: &[&str], workdir: Option<&str>) -> anyhow::Result<String> {
+/// 执行 git 命令的辅助函数（异步版本）
+async fn run_git(args: &[&str], workdir: Option<&str>) -> anyhow::Result<String> {
     let mut cmd = Command::new("git");
     cmd.args(args);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
 
     if let Some(dir) = workdir {
         cmd.current_dir(dir);
     }
 
-    let output = cmd.output()?;
+    let output = cmd.output().await?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -92,9 +95,9 @@ fn run_git(args: &[&str], workdir: Option<&str>) -> anyhow::Result<String> {
     }
 }
 
-/// 检查是否在 git 仓库中
-fn is_git_repo(workdir: Option<&str>) -> bool {
-    run_git(&["rev-parse", "--is-inside-work-tree"], workdir).is_ok()
+/// 检查是否在 git 仓库中（异步版本）
+async fn is_git_repo(workdir: Option<&str>) -> bool {
+    run_git(&["rev-parse", "--is-inside-work-tree"], workdir).await.is_ok()
 }
 
 // ============================================================================
@@ -147,7 +150,7 @@ impl Tool for GitStatusTool {
 
         let workdir = params.workdir.as_deref();
 
-        if !is_git_repo(workdir) {
+        if !is_git_repo(workdir).await {
             return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
         }
 
@@ -157,10 +160,10 @@ impl Tool for GitStatusTool {
             vec!["status"]
         };
 
-        let status = run_git(&args, workdir)?;
+        let status = run_git(&args, workdir).await?;
 
         // 获取当前分支
-        let branch = run_git(&["branch", "--show-current"], workdir)?;
+        let branch = run_git(&["branch", "--show-current"], workdir).await?;
 
         Ok(format!(
             "当前分支: {}\n\n{}",
@@ -228,7 +231,7 @@ impl Tool for GitDiffTool {
 
         let workdir = params.workdir.as_deref();
 
-        if !is_git_repo(workdir) {
+        if !is_git_repo(workdir).await {
             return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
         }
 
@@ -248,7 +251,7 @@ impl Tool for GitDiffTool {
             git_args.push(file);
         }
 
-        let diff = run_git(&git_args, workdir)?;
+        let diff = run_git(&git_args, workdir).await?;
 
         if diff.trim().is_empty() {
             Ok("没有差异".to_string())
@@ -316,7 +319,7 @@ impl Tool for GitLogTool {
 
         let workdir = params.workdir.as_deref();
 
-        if !is_git_repo(workdir) {
+        if !is_git_repo(workdir).await {
             return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
         }
 
@@ -338,7 +341,7 @@ impl Tool for GitLogTool {
             git_args.push(file);
         }
 
-        let log = run_git(&git_args, workdir)?;
+        let log = run_git(&git_args, workdir).await?;
 
         if log.trim().is_empty() {
             Ok("没有提交历史".to_string())
@@ -405,12 +408,12 @@ impl Tool for GitCommitTool {
 
         let workdir = params.workdir.as_deref();
 
-        if !is_git_repo(workdir) {
+        if !is_git_repo(workdir).await {
             return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
         }
 
         // 检查是否有更改需要提交
-        let status = run_git(&["status", "--porcelain"], workdir)?;
+        let status = run_git(&["status", "--porcelain"], workdir).await?;
 
         if status.trim().is_empty() {
             return Ok("没有更改需要提交".to_string());
@@ -418,14 +421,14 @@ impl Tool for GitCommitTool {
 
         // 如果需要，先添加所有更改
         if params.add_all {
-            run_git(&["add", "."], workdir)?;
+            run_git(&["add", "."], workdir).await?;
         }
 
         // 创建提交
-        let commit_output = run_git(&["commit", "-m", &params.message], workdir)?;
+        let commit_output = run_git(&["commit", "-m", &params.message], workdir).await?;
 
         // 获取新提交的信息
-        let last_commit = run_git(&["log", "-1", "--oneline"], workdir)?;
+        let last_commit = run_git(&["log", "-1", "--oneline"], workdir).await?;
 
         Ok(format!(
             "提交成功！\n{}\n新提交: {}",
@@ -493,14 +496,14 @@ impl Tool for GitAddTool {
 
         let workdir = params.workdir.as_deref();
 
-        if !is_git_repo(workdir) {
+        if !is_git_repo(workdir).await {
             return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
         }
 
         let mut all_output = String::new();
 
         for file in &params.files {
-            let output = run_git(&["add", file], workdir)?;
+            let output = run_git(&["add", file], workdir).await?;
             all_output.push_str(&format!("已添加: {}\n", file));
             if !output.trim().is_empty() {
                 all_output.push_str(&output);
@@ -509,7 +512,7 @@ impl Tool for GitAddTool {
         }
 
         // 显示暂存区状态
-        let status = run_git(&["status", "--short"], workdir)?;
+        let status = run_git(&["status", "--short"], workdir).await?;
         all_output.push_str("\n当前暂存区状态:\n");
         all_output.push_str(&status);
 
@@ -580,31 +583,31 @@ impl Tool for GitBranchTool {
 
         let workdir = params.workdir.as_deref();
 
-        if !is_git_repo(workdir) {
+        if !is_git_repo(workdir).await {
             return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
         }
 
         match params.action.as_str() {
             "list" => {
-                let branches = run_git(&["branch", "-a"], workdir)?;
+                let branches = run_git(&["branch", "-a"], workdir).await?;
                 Ok(branches)
             }
             "current" => {
-                let branch = run_git(&["branch", "--show-current"], workdir)?;
+                let branch = run_git(&["branch", "--show-current"], workdir).await?;
                 Ok(format!("当前分支: {}", branch.trim()))
             }
             "create" => {
                 let name = params.name.ok_or_else(|| {
                     anyhow::anyhow!("创建分支需要提供分支名称")
                 })?;
-                run_git(&["branch", &name], workdir)?;
+                run_git(&["branch", &name], workdir).await?;
                 Ok(format!("已创建分支: {}", name))
             }
             "delete" => {
                 let name = params.name.ok_or_else(|| {
                     anyhow::anyhow!("删除分支需要提供分支名称")
                 })?;
-                run_git(&["branch", "-d", &name], workdir)?;
+                run_git(&["branch", "-d", &name], workdir).await?;
                 Ok(format!("已删除分支: {}", name))
             }
             _ => Err(anyhow::anyhow!("未知操作: {}", params.action))

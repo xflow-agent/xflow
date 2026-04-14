@@ -193,12 +193,13 @@ impl ProjectScanner {
         // 检测项目类型
         let project_type = self.detect_project_type(&files);
         
-        // 获取项目名称
+        // 获取项目名称（规范化路径后获取）
         let name = self.root
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .or_else(|| self.root.file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "unknown".to_string());
         
         let total_files = files.len();
         let source_files_count = source_files.len();

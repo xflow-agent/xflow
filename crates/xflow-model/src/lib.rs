@@ -2,10 +2,10 @@
 //!
 //! 提供统一的模型接口，支持多种后端
 
-mod ollama;
+mod openai;
 mod types;
 
-pub use ollama::OllamaProvider;
+pub use openai::OpenAIProvider;
 pub use types::*;
 
 use async_trait::async_trait;

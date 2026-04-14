@@ -6,6 +6,39 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::{debug, warn};
 
+/// 敏感路径前缀列表（禁止写入）
+const SENSITIVE_WRITE_PATHS: &[&str] = &[
+    "/etc/passwd",
+    "/etc/shadow",
+    "/etc/sudoers",
+    "/etc/ssh",
+    "/root/.ssh",
+    "/root/.bashrc",
+    "/root/.profile",
+    "/boot",
+    "/sys",
+    "/proc",
+];
+
+/// 最大文件大小限制（10MB）
+const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
+
+/// 检查路径是否为敏感路径
+fn is_sensitive_path(path: &std::path::Path) -> bool {
+    let path_str = path.to_string_lossy();
+    for sensitive in SENSITIVE_WRITE_PATHS {
+        if path_str.starts_with(sensitive) || path_str == *sensitive {
+            return true;
+        }
+    }
+    false
+}
+
+/// 检查路径是否包含目录遍历攻击
+fn has_path_traversal(path: &str) -> bool {
+    path.contains("..") || path.contains("~")
+}
+
 /// write_file 工具参数
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WriteFileArgs {
@@ -75,6 +108,27 @@ impl Tool for WriteFileTool {
         let path = PathBuf::from(&params.path);
 
         debug!("写入文件: {:?}", path);
+
+        // 安全检查：目录遍历攻击
+        if has_path_traversal(&params.path) {
+            warn!("检测到目录遍历攻击尝试: {}", params.path);
+            return Ok(format!("错误: 路径包含非法字符: {}", params.path));
+        }
+
+        // 安全检查：敏感路径
+        if is_sensitive_path(&path) {
+            warn!("尝试写入敏感路径: {:?}", path);
+            return Ok(format!("错误: 拒绝写入敏感路径: {}", params.path));
+        }
+
+        // 安全检查：文件大小限制
+        if params.content.len() > MAX_FILE_SIZE {
+            warn!("文件内容超过大小限制: {} 字节", params.content.len());
+            return Ok(format!(
+                "错误: 文件内容超过最大限制 ({} MB)",
+                MAX_FILE_SIZE / 1024 / 1024
+            ));
+        }
 
         // 检查父目录是否存在，不存在则创建
         if let Some(parent) = path.parent() {

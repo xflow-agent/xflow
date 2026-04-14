@@ -176,10 +176,6 @@ impl Session {
         match builder.generate_system_context() {
             Ok(context) => {
                 info!("项目上下文初始化成功");
-                println!("📁 正在扫描项目目录...");
-                if let Ok(proj_info) = builder.build() {
-                    println!("   {}", proj_info.info.summary());
-                }
                 self.project_context = Some(context);
             }
             Err(e) => {

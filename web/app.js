@@ -68,13 +68,21 @@ class XflowApp {
             console.log('WebSocket 连接成功');
             this.connected = true;
             this.updateConnectionStatus('connected');
+            
+            // 如果有已保存的 session_id，尝试恢复会话
+            if (this.sessionId) {
+                this.ws.send(JSON.stringify({
+                    type: 'restore_session',
+                    session_id: this.sessionId
+                }));
+            }
         };
         
         this.ws.onclose = () => {
             console.log('WebSocket 连接关闭');
             this.connected = false;
             this.updateConnectionStatus('disconnected');
-            // 5秒后重连
+            // 5秒后重连（保持 session_id）
             setTimeout(() => this.connect(), 5000);
         };
         
@@ -375,15 +383,17 @@ class XflowApp {
         // 简单的 Markdown 格式化
         if (!content) return '';
         
-        // 转義 HTML
+        // 转義 HTML - 在 Markdown 处理前先转义
         let formatted = content
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
         
-        // 代码块
+        // 代码块 - 转义语言标识符防止 XSS
         formatted = formatted.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-            return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
+            // 语言标识符只允许字母数字和常见字符
+            const safeLang = lang.replace(/[^a-zA-Z0-9+-]/g, '');
+            return `<pre><code class="language-${safeLang}">${code.trim()}</code></pre>`;
         });
         
         // 行内代码
