@@ -299,6 +299,10 @@ impl Session {
                 });
             }
 
+            // 显示思考中状态（不缩进）
+            println!();
+            println!("\x1b[35m✻\x1b[90m 思考中...\x1b[0m");
+
             // 调用模型（流式 + 工具）
             let tool_defs = self.get_tool_definitions();
             let stream = self
@@ -309,6 +313,7 @@ impl Session {
             // 处理流式响应
             let mut full_response = String::new();
             let mut tool_calls: Vec<ToolCall> = Vec::new();
+            let mut has_output = false;
 
             use futures::StreamExt;
             let mut stream = stream;
@@ -322,8 +327,15 @@ impl Session {
                     }) => {
                         // 输出文本内容
                         if !content.is_empty() {
-                            (self.output)(OutputMessage::Content(content.clone()));
+                            // 第一次输出时换行并显示正式回答图标
+                            if !has_output {
+                                println!();
+                                print!("\x1b[34m✦\x1b[0m ");
+                                has_output = true;
+                            }
+                            print!("{}", content);
                             full_response.push_str(&content);
+                            std::io::Write::flush(&mut std::io::stdout()).ok();
                         }
 
                         // 收集工具调用
