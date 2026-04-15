@@ -86,7 +86,7 @@ fn output_to_response(msg: OutputMessage) -> WsResponse {
     match msg {
         OutputMessage::Content(text) => WsResponse::Content { text },
         OutputMessage::ToolCall { name, .. } => WsResponse::ToolCall { name },
-        OutputMessage::ToolResult { name, result_size } => WsResponse::ToolResult { 
+        OutputMessage::ToolResult { name, result_size, .. } => WsResponse::ToolResult { 
             name, 
             size: result_size 
         },

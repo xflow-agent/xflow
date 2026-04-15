@@ -147,7 +147,7 @@ fn print_welcome(workdir: &Path, model: &str) {
     // 右侧信息 (与logo顶部对齐)
     let version = env!("CARGO_PKG_VERSION");
     let info: [String; 6] = [
-        format!("\x1b[1;36mXFlow\x1b[0m 心流 AI 编程助手"),
+        "\x1b[1;36mXFlow\x1b[0m 心流 AI 编程助手".to_string(),
         format!("\x1b[90m版本号: {}\x1b[0m", version),
         String::new(),
         format!("\x1b[90m当前模型:\x1b[0m {}", model),

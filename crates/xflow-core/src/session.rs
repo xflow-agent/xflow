@@ -3,6 +3,8 @@
 use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 use tracing::{debug, info, warn};
 use xflow_model::{Message, ModelProvider, StreamChunk, ToolCall, ToolDefinition};
 use xflow_tools::ToolRegistry;
@@ -14,8 +16,48 @@ use crate::interaction::{Interaction, CliInteraction, ConfirmationRequest};
 /// 最大工具调用循环次数
 const MAX_TOOL_LOOPS: usize = 20;
 
+/// 等待动画最大点数（一行终端大约80字符，留足空间）
+const MAX_DOTS: usize = 60;
+
 /// 需要确认的工具列表
 const TOOLS_REQUIRING_CONFIRMATION: &[&str] = &["write_file", "run_shell"];
+
+/// 格式化工具参数显示
+fn format_tool_params(tool_name: &str, args: &serde_json::Value) -> String {
+    match tool_name {
+        "read_file" | "list_directory" => {
+            args.get("path")
+                .and_then(|p| p.as_str())
+                .map(|p| format!("path=\"{}\"", p))
+                .unwrap_or_default()
+        }
+        "write_file" => {
+            args.get("path")
+                .and_then(|p| p.as_str())
+                .map(|p| format!("path=\"{}\"", p))
+                .unwrap_or_default()
+        }
+        "run_shell" => {
+            args.get("command")
+                .and_then(|c| c.as_str())
+                .map(|c| {
+                    if c.len() > 50 {
+                        format!("command=\"{}...\"", &c[..50])
+                    } else {
+                        format!("command=\"{}\"", c)
+                    }
+                })
+                .unwrap_or_default()
+        }
+        "search_file" => {
+            args.get("pattern")
+                .and_then(|p| p.as_str())
+                .map(|p| format!("pattern=\"{}\"", p))
+                .unwrap_or_default()
+        }
+        _ => String::new(),
+    }
+}
 
 /// 系统提示词（基础部分）
 const SYSTEM_PROMPT_BASE: &str = r#"你是一个智能编程助手 xflow (心流)。你可以使用工具来帮助用户完成编程任务。
@@ -299,9 +341,30 @@ impl Session {
                 });
             }
 
-            // 显示思考中状态（不缩进）
+            // 显示思考中状态（蓝色✻图标 + 灰色斜体"思考中..."）
             println!();
-            println!("\x1b[35m✻\x1b[90m 思考中...\x1b[0m");
+            print!("\x1b[34m✻\x1b[0m \x1b[90m\x1b[3m思考中...\x1b[0m");
+            std::io::Write::flush(&mut std::io::stdout()).ok();
+
+            // 启动等待动画（后台线程每秒输出一个点）
+            let animation_running = Arc::new(AtomicBool::new(true));
+            let animation_handle = {
+                let running = animation_running.clone();
+                thread::spawn(move || {
+                    let mut dot_count = 0;
+                    while running.load(Ordering::Relaxed) {
+                        thread::sleep(std::time::Duration::from_millis(1000));
+                        if !running.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        if dot_count < MAX_DOTS {
+                            print!("\x1b[90m\x1b[3m.\x1b[0m");
+                            std::io::Write::flush(&mut std::io::stdout()).ok();
+                            dot_count += 1;
+                        }
+                    }
+                })
+            };
 
             // 调用模型（流式 + 工具）
             let tool_defs = self.get_tool_definitions();
@@ -312,8 +375,12 @@ impl Session {
 
             // 处理流式响应
             let mut full_response = String::new();
+            let mut full_reasoning = String::new();
             let mut tool_calls: Vec<ToolCall> = Vec::new();
             let mut has_output = false;
+            let mut has_reasoning = false;
+            let mut has_tool_call = false;
+            let mut animation_stopped = false;
 
             use futures::StreamExt;
             let mut stream = stream;
@@ -322,25 +389,75 @@ impl Session {
                 match chunk {
                     Ok(StreamChunk {
                         content,
+                        reasoning,
                         done,
                         tool_calls: chunk_tool_calls,
                     }) => {
-                        // 输出文本内容
-                        if !content.is_empty() {
-                            // 第一次输出时换行并显示正式回答图标
-                            if !has_output {
+                        // 收到第一个响应时停止动画
+                        if !animation_stopped {
+                            animation_running.store(false, Ordering::Relaxed);
+                            println!(); // 换行结束动画行
+                            animation_stopped = true;
+                        }
+
+                        // 收集工具调用（先收集，稍后处理）
+                        if !chunk_tool_calls.is_empty() {
+                            if !has_tool_call {
+                                // 如果之前有思考内容，先关闭样式
+                                if has_reasoning {
+                                    print!("\x1b[0m");
+                                    // 判断思考内容最后是否已换行
+                                    if !full_reasoning.ends_with('\n') {
+                                        println!();
+                                    }
+                                }
+                                // 第一次工具调用前换行
                                 println!();
-                                print!("\x1b[34m✦\x1b[0m ");
+                                has_tool_call = true;
+                            }
+                            tool_calls.extend(chunk_tool_calls);
+                        }
+
+                        // 输出思考内容（灰色斜体，缩进显示）
+                        if let Some(reasoning_text) = reasoning {
+                            if !reasoning_text.is_empty() {
+                                // 第一次输出思考内容时换行并开始缩进
+                                if !has_reasoning {
+                                    println!();
+                                    print!("  \x1b[90m\x1b[3m");
+                                    has_reasoning = true;
+                                }
+                                // 缩进✻图标宽度后，输出灰色斜体思考内容
+                                // 处理换行：每行都需要缩进
+                                for ch in reasoning_text.chars() {
+                                    if ch == '\n' {
+                                        println!("\x1b[0m");
+                                        print!("  \x1b[90m\x1b[3m");
+                                    } else {
+                                        print!("{}", ch);
+                                    }
+                                }
+                                std::io::Write::flush(&mut std::io::stdout()).ok();
+                                full_reasoning.push_str(&reasoning_text);
+                            }
+                        }
+
+                        // 输出文本内容（只有非工具调用且非纯空白内容时才显示）
+                        if !has_tool_call && !content.is_empty() && !content.trim().is_empty() {
+                            // 第一次输出正式内容时显示正式回答图标
+                            if !has_output {
+                                // 如果之前有思考内容，先换行清除缩进
+                                if has_reasoning {
+                                    println!("\x1b[0m");
+                                }
+                                println!();
+                                // 紫色✦图标，紧跟内容不换行
+                                print!("\x1b[35m✦\x1b[0m ");
                                 has_output = true;
                             }
                             print!("{}", content);
                             full_response.push_str(&content);
                             std::io::Write::flush(&mut std::io::stdout()).ok();
-                        }
-
-                        // 收集工具调用
-                        if !chunk_tool_calls.is_empty() {
-                            tool_calls.extend(chunk_tool_calls);
                         }
 
                         if done {
@@ -368,14 +485,19 @@ impl Session {
                     let tool_name = &tool_call.function.name;
                     let tool_args = &tool_call.function.arguments;
 
+                    // 格式化参数显示
+                    let params_display = if tool_calls.len() > 1 {
+                        format!("[{}/{}]", i + 1, tool_calls.len())
+                    } else {
+                        // 提取关键参数显示
+                        format_tool_params(tool_name, tool_args)
+                    };
+
                     // 工具调用进度
                     (self.output)(OutputMessage::ToolCall {
                         name: tool_name.clone(),
-                        args: if tool_calls.len() > 1 {
-                            format!("{}/{}", i + 1, tool_calls.len())
-                        } else {
-                            String::new()
-                        },
+                        args: tool_args.to_string(),
+                        params_display,
                     });
                     debug!("工具参数: {}", tool_args);
 
@@ -387,24 +509,22 @@ impl Session {
                     };
 
                     // 执行工具
-                    let result = if !confirmed {
-                        "操作已取消".to_string()
+                    let (result, success) = if !confirmed {
+                        ("操作已取消".to_string(), false)
                     } else if tool_name == "analyze_project" {
-                        // 特殊处理：调用 Reviewer Agent
-                        self.execute_reviewer_agent(tool_args.clone()).await
+                        (self.execute_reviewer_agent(tool_args.clone()).await, true)
                     } else if tool_name == "implement_feature" {
-                        // 特殊处理：调用 Coder Agent
-                        self.execute_coder_agent(tool_args.clone()).await
+                        (self.execute_coder_agent(tool_args.clone()).await, true)
                     } else if let Some(tool) = self.tools.get(tool_name) {
                         match tool.execute(tool_args.clone()).await {
-                            Ok(result) => result,
-                            Err(e) => format!("工具执行错误: {}", e),
+                            Ok(result) => (result, true),
+                            Err(e) => (format!("工具执行错误: {}", e), false),
                         }
                     } else {
-                        format!("未知工具: {}", tool_name)
+                        (format!("未知工具: {}", tool_name), false)
                     };
 
-                    // 显示结果摘要 (安全截断，避免 UTF-8 边界问题)
+                    // 显示结果
                     let result_preview = if result.chars().count() > 200 {
                         format!("{}...", result.chars().take(200).collect::<String>())
                     } else {
@@ -412,9 +532,11 @@ impl Session {
                     };
                     (self.output)(OutputMessage::ToolResult {
                         name: tool_name.clone(),
+                        result: result_preview,
                         result_size: result.len(),
+                        success,
                     });
-                    debug!("工具结果: {}", result_preview);
+                    debug!("工具结果: {} bytes", result.len());
 
                     // 添加工具结果消息
                     self.messages
@@ -422,6 +544,10 @@ impl Session {
                     
                     total_tools_called += 1;
                 }
+
+                // 确保动画线程停止
+                animation_running.store(false, Ordering::Relaxed);
+                let _ = animation_handle.join();
 
                 loop_count += 1;
                 continue; // 继续循环，让模型处理工具结果
@@ -439,6 +565,10 @@ impl Session {
                     loops: loop_count 
                 });
             }
+
+            // 确保动画线程停止
+            animation_running.store(false, Ordering::Relaxed);
+            let _ = animation_handle.join();
 
             break;
         }

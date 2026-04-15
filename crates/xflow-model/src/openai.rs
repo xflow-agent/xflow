@@ -261,9 +261,15 @@ impl ModelProvider for OpenAIProvider {
 
                                 // 处理文本内容
                                 let content = choice.delta.content.unwrap_or_default();
-                                if !content.is_empty() {
+                                // 处理思考内容 (支持 reasoning_content 和 reasoning 两种字段名)
+                                let reasoning = choice.delta.reasoning_content
+                                    .or(choice.delta.reasoning)
+                                    .filter(|s| !s.is_empty());
+                                
+                                if !content.is_empty() || reasoning.is_some() {
                                     yield Ok(StreamChunk {
                                         content,
+                                        reasoning,
                                         done: false,
                                         tool_calls: vec![],
                                     });
@@ -321,6 +327,7 @@ impl ModelProvider for OpenAIProvider {
                                     
                                     yield Ok(StreamChunk {
                                         content: String::new(),
+                                        reasoning: None,
                                         done: true,
                                         tool_calls: converted,
                                     });
@@ -423,6 +430,7 @@ struct OpenAIFunctionCall {
 
 /// OpenAI 响应
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct OpenAIResponse {
     model: String,
     choices: Vec<OpenAIChoice>,
@@ -432,6 +440,7 @@ struct OpenAIResponse {
 
 /// OpenAI 选择项
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct OpenAIChoice {
     index: u32,
     message: OpenAIResponseMessage,
@@ -441,6 +450,7 @@ struct OpenAIChoice {
 
 /// OpenAI 响应消息
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct OpenAIResponseMessage {
     role: String,
     #[serde(default)]
@@ -451,6 +461,7 @@ struct OpenAIResponseMessage {
 
 /// OpenAI 用量统计
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct OpenAIUsage {
     prompt_tokens: u32,
     completion_tokens: u32,
@@ -466,6 +477,7 @@ struct OpenAIStreamResponse {
 
 /// OpenAI 流式选择项
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct OpenAIStreamChoice {
     index: u32,
     delta: OpenAIDelta,
@@ -475,17 +487,23 @@ struct OpenAIStreamChoice {
 
 /// OpenAI 增量内容
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct OpenAIDelta {
     #[serde(default)]
     role: Option<String>,
     #[serde(default)]
     content: Option<String>,
     #[serde(default)]
+    reasoning_content: Option<String>,
+    #[serde(default)]
+    reasoning: Option<String>,
+    #[serde(default)]
     tool_calls: Option<Vec<OpenAIStreamToolCall>>,
 }
 
 /// OpenAI 流式工具调用
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct OpenAIStreamToolCall {
     index: u32,
     #[serde(default)]

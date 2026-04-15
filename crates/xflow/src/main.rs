@@ -75,7 +75,7 @@ fn init_logging(debug: bool) {
     // 日志文件路径
     let log_dir = dirs::data_dir()
         .map(|p| p.join("xflow/logs"))
-        .unwrap_or_else(|| std::env::temp_dir());
+        .unwrap_or_else(std::env::temp_dir);
     let _ = std::fs::create_dir_all(&log_dir);
     let log_file = log_dir.join("xflow.log");
     

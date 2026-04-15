@@ -122,6 +122,7 @@ pub struct Response {
 #[derive(Debug, Clone)]
 pub struct StreamChunk {
     pub content: String,
+    pub reasoning: Option<String>,
     pub done: bool,
     pub tool_calls: Vec<ToolCall>,
 }
