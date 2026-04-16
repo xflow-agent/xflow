@@ -110,20 +110,28 @@ class XflowApp {
                 console.log('会话ID:', this.sessionId);
                 break;
                 
+            case 'thinking':
+                this.showThinking();
+                break;
+                
+            case 'thinking_content':
+                this.appendThinkingContent(data.text);
+                break;
+                
             case 'content':
                 this.appendContent(data.text);
                 break;
                 
             case 'tool_call':
-                this.showToolCall(data.name);
+                this.showToolCall(data.name, data.params_display);
                 break;
                 
             case 'tool_result':
-                this.showToolResult(data.name, data.size);
+                this.showToolResult(data.name, data.result, data.size, data.success);
                 break;
                 
             case 'loop_progress':
-                this.showLoopProgress(data.current, data.max);
+                // 不显示循环进度
                 break;
                 
             case 'done':
@@ -278,6 +286,7 @@ class XflowApp {
         
         // 准备接收响应
         this.currentResponse = '';
+        this.thinkingContent = '';
         this.toolIndicators = [];  // 工具指示器列表
         this.addMessage('assistant', '', true);
     }
@@ -315,14 +324,29 @@ class XflowApp {
         const bubble = document.getElementById('streaming-bubble');
         if (bubble) {
             this.currentResponse += text;
-            // 使用单独的内容区域，避免覆盖工具指示器
+            
+            // 检查是否已创建响应内容区域
             let contentArea = bubble.querySelector('.response-content');
-            if (!contentArea) {
+            if (!contentArea && text.trim()) {
+                // 如果有思考内容或工具调用，添加分隔
+                const thinkingContent = bubble.querySelector('.thinking-content');
+                const toolIndicators = bubble.querySelectorAll('.tool-indicator, .tool-result-status');
+                if (thinkingContent || toolIndicators.length > 0) {
+                    const spacer = document.createElement('div');
+                    spacer.style.marginTop = '16px';
+                    bubble.appendChild(spacer);
+                }
+                
+                // 创建内容区域
                 contentArea = document.createElement('div');
                 contentArea.className = 'response-content';
-                bubble.insertBefore(contentArea, bubble.firstChild);
+                bubble.appendChild(contentArea);
             }
-            contentArea.innerHTML = this.formatContent(this.currentResponse);
+            
+            // 将图标和内容在同一行显示
+            if (contentArea) {
+                contentArea.innerHTML = `<span class="response-icon"><span class="icon-purple">✦</span></span> ${this.formatContent(this.currentResponse)}`;
+            }
             this.scrollToBottom();
         }
     }
@@ -333,40 +357,123 @@ class XflowApp {
             bubble.removeAttribute('id');
         }
         this.currentResponse = '';
+        this.thinkingContent = '';
     }
     
-    showToolCall(name) {
+    showToolCall(name, paramsDisplay) {
         const bubble = document.getElementById('streaming-bubble');
         if (bubble) {
+            // 如果有思考内容，先添加换行
+            const thinkingContent = bubble.querySelector('.thinking-content');
+            if (thinkingContent && !bubble.querySelector('.tool-indicator')) {
+                const spacer = document.createElement('div');
+                spacer.style.marginTop = '8px';
+                bubble.appendChild(spacer);
+            }
+            
             const indicator = document.createElement('div');
             indicator.className = 'tool-indicator';
-            indicator.innerHTML = `
-                <span class="spinner"></span>
-                <span>调用工具: ${name}</span>
-            `;
+            if (paramsDisplay) {
+                indicator.innerHTML = `
+                    <span class="tool-icon">🛠</span>
+                    <span class="tool-name">${this.escapeHtml(name)}</span>
+                    <span class="tool-params">${this.escapeHtml(paramsDisplay)}</span>
+                `;
+            } else {
+                indicator.innerHTML = `
+                    <span class="tool-icon">🛠</span>
+                    <span class="tool-name">${this.escapeHtml(name)}</span>
+                `;
+            }
             bubble.appendChild(indicator);
             this.scrollToBottom();
         }
     }
     
-    showToolResult(name, size) {
+    showToolResult(name, result, size, success) {
         const bubble = document.getElementById('streaming-bubble');
         if (bubble) {
-            const result = document.createElement('div');
-            result.className = 'tool-indicator';
-            result.innerHTML = `<span>✓ ${name}: ${size} 字节</span>`;
-            bubble.appendChild(result);
+            // 显示结果内容
+            if (result && result.length > 0) {
+                const resultContent = document.createElement('div');
+                resultContent.className = 'tool-result-content';
+                // 截断显示
+                const displayResult = result.length > 500 ? result.substring(0, 500) + '...' : result;
+                resultContent.textContent = displayResult;
+                bubble.appendChild(resultContent);
+            }
+            
+            // 显示状态
+            const status = document.createElement('div');
+            status.className = 'tool-result-status';
+            
+            const sizeStr = size > 1024 
+                ? `${(size / 1024).toFixed(1)}KB` 
+                : `${size}B`;
+            
+            if (success) {
+                status.innerHTML = `<span class="status-success">✓</span> <span class="status-text">调用成功</span> <span class="status-size">(${sizeStr})</span>`;
+            } else {
+                status.innerHTML = `<span class="status-failure">✗</span> <span class="status-text">调用失败</span> <span class="status-size">(${sizeStr})</span>`;
+            }
+            bubble.appendChild(status);
             this.scrollToBottom();
         }
     }
     
-    showLoopProgress(current, max) {
+    showThinking() {
         const bubble = document.getElementById('streaming-bubble');
         if (bubble) {
-            const progress = document.createElement('div');
-            progress.className = 'tool-indicator';
-            progress.innerHTML = `<span>── 自动执行 (第 ${current}/${max} 轮) ──</span>`;
-            bubble.appendChild(progress);
+            // 重置思考内容变量（新思考阶段开始）
+            this.thinkingContent = '';
+            
+            // 如果已有内容（工具调用后），添加分隔
+            const hasContent = bubble.children.length > 0;
+            
+            const indicator = document.createElement('div');
+            indicator.className = 'thinking-indicator';
+            if (hasContent) {
+                // 添加分隔，确保在新行显示
+                const spacer = document.createElement('div');
+                spacer.style.marginTop = '12px';
+                bubble.appendChild(spacer);
+            }
+            indicator.innerHTML = `<span class="thinking-icon">✻</span> <span class="thinking-text">思考中...</span>`;
+            bubble.appendChild(indicator);
+            this.scrollToBottom();
+        }
+    }
+    
+    appendThinkingContent(text) {
+        const bubble = document.getElementById('streaming-bubble');
+        if (bubble) {
+            // 找到最后一个"思考中..."指示器（当前最新的）
+            const indicators = bubble.querySelectorAll('.thinking-indicator');
+            const indicator = indicators.length > 0 ? indicators[indicators.length - 1] : null;
+            
+            // 在指示器后面查找或创建思考内容区域
+            let contentArea = null;
+            if (indicator) {
+                // 检查指示器的下一个兄弟是否是思考内容
+                let nextSibling = indicator.nextElementSibling;
+                if (nextSibling && nextSibling.classList.contains('thinking-content')) {
+                    contentArea = nextSibling;
+                } else {
+                    // 在指示器后面创建新的思考内容区域
+                    contentArea = document.createElement('div');
+                    contentArea.className = 'thinking-content';
+                    indicator.after(contentArea);
+                }
+            } else {
+                // 没有指示器，直接追加到 bubble
+                contentArea = document.createElement('div');
+                contentArea.className = 'thinking-content';
+                bubble.appendChild(contentArea);
+            }
+            
+            // 追加内容
+            this.thinkingContent = (this.thinkingContent || '') + text;
+            contentArea.textContent = this.thinkingContent;
             this.scrollToBottom();
         }
     }

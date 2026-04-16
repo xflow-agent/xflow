@@ -40,13 +40,17 @@ pub enum WsRequest {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsResponse {
+    /// 思考中状态
+    Thinking,
+    /// 思考内容（流式，灰色斜体）
+    ThinkingContent { text: String },
     /// 文本内容（流式）
     Content { text: String },
-    /// 工具调用
-    ToolCall { name: String },
-    /// 工具结果
-    ToolResult { name: String, size: usize },
-    /// 循环进度
+    /// 工具调用（黄色图标 + 参数）
+    ToolCall { name: String, params_display: String },
+    /// 工具结果（内容 + 成功/失败状态）
+    ToolResult { name: String, result: String, size: usize, success: bool },
+    /// 循环进度（不显示，仅用于内部状态）
     LoopProgress { current: usize, max: usize },
     /// 完成
     Done,
@@ -84,11 +88,18 @@ pub fn create_ws_router(state: Arc<AppState>) -> Router {
 /// 将输出消息转换为 WebSocket 响应
 fn output_to_response(msg: OutputMessage) -> WsResponse {
     match msg {
+        OutputMessage::Thinking => WsResponse::Thinking,
+        OutputMessage::ThinkingContent(text) => WsResponse::ThinkingContent { text },
         OutputMessage::Content(text) => WsResponse::Content { text },
-        OutputMessage::ToolCall { name, .. } => WsResponse::ToolCall { name },
-        OutputMessage::ToolResult { name, result_size, .. } => WsResponse::ToolResult { 
+        OutputMessage::ToolCall { name, args: _, params_display } => WsResponse::ToolCall { 
             name, 
-            size: result_size 
+            params_display 
+        },
+        OutputMessage::ToolResult { name, result, result_size, success } => WsResponse::ToolResult { 
+            name, 
+            result,
+            size: result_size,
+            success,
         },
         OutputMessage::LoopProgress { current, max } => WsResponse::LoopProgress { current, max },
         OutputMessage::Done { .. } => WsResponse::Done,

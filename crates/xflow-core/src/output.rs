@@ -7,6 +7,10 @@ use std::sync::{Mutex, Arc};
 /// 消息类型
 #[derive(Debug, Clone)]
 pub enum OutputMessage {
+    /// 思考中状态开始
+    Thinking,
+    /// 思考/推理内容（流式，灰色斜体）
+    ThinkingContent(String),
     /// 文本内容（流式）
     Content(String),
     /// 工具调用开始
@@ -41,6 +45,24 @@ const INDENT: &str = "  ";
 pub fn console_callback() -> OutputCallback {
     Box::new(|msg| {
         match msg {
+            OutputMessage::Thinking => {
+                // 思考中状态：蓝色✻图标 + 灰色斜体"思考中..."
+                println!();
+                print!("\x1b[34m✻\x1b[0m \x1b[90m\x1b[3m思考中...\x1b[0m");
+                std::io::Write::flush(&mut std::io::stdout()).ok();
+            }
+            OutputMessage::ThinkingContent(text) => {
+                // 思考内容：灰色斜体，带缩进
+                for ch in text.chars() {
+                    if ch == '\n' {
+                        println!("\x1b[0m");
+                        print!("  \x1b[90m\x1b[3m");
+                    } else {
+                        print!("{}", ch);
+                    }
+                }
+                std::io::Write::flush(&mut std::io::stdout()).ok();
+            }
             OutputMessage::Content(text) => {
                 // 正式回答：彩色 ✦ 图标 + 白色文字
                 print!("\x1b[34m✦\x1b[0m {}", text);

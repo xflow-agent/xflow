@@ -341,12 +341,10 @@ impl Session {
                 });
             }
 
-            // 显示思考中状态（蓝色✻图标 + 灰色斜体"思考中..."）
-            println!();
-            print!("\x1b[34m✻\x1b[0m \x1b[90m\x1b[3m思考中...\x1b[0m");
-            std::io::Write::flush(&mut std::io::stdout()).ok();
+            // 发送思考中状态
+            (self.output)(OutputMessage::Thinking);
 
-            // 启动等待动画（后台线程每秒输出一个点）
+            // 启动等待动画（CLI 专用，后台线程每秒输出一个点）
             let animation_running = Arc::new(AtomicBool::new(true));
             let animation_handle = {
                 let running = animation_running.clone();
@@ -377,7 +375,6 @@ impl Session {
             let mut full_response = String::new();
             let mut full_reasoning = String::new();
             let mut tool_calls: Vec<ToolCall> = Vec::new();
-            let mut has_output = false;
             let mut has_reasoning = false;
             let mut has_tool_call = false;
             let mut animation_stopped = false;
@@ -396,68 +393,44 @@ impl Session {
                         // 收到第一个响应时停止动画
                         if !animation_stopped {
                             animation_running.store(false, Ordering::Relaxed);
-                            println!(); // 换行结束动画行
+                            println!(); // CLI: 换行结束动画行
                             animation_stopped = true;
                         }
 
                         // 收集工具调用（先收集，稍后处理）
                         if !chunk_tool_calls.is_empty() {
                             if !has_tool_call {
-                                // 如果之前有思考内容，先关闭样式
+                                // 第一次工具调用前换行（CLI 显示用）
                                 if has_reasoning {
-                                    print!("\x1b[0m");
-                                    // 判断思考内容最后是否已换行
+                                    println!("\x1b[0m"); // CLI: 关闭样式
                                     if !full_reasoning.ends_with('\n') {
                                         println!();
                                     }
                                 }
-                                // 第一次工具调用前换行
-                                println!();
+                                println!(); // CLI: 换行
                                 has_tool_call = true;
                             }
                             tool_calls.extend(chunk_tool_calls);
                         }
 
-                        // 输出思考内容（灰色斜体，缩进显示）
+                        // 输出思考内容（通过回调发送）
                         if let Some(reasoning_text) = reasoning {
                             if !reasoning_text.is_empty() {
-                                // 第一次输出思考内容时换行并开始缩进
+                                // 第一次输出思考内容
                                 if !has_reasoning {
-                                    println!();
-                                    print!("  \x1b[90m\x1b[3m");
                                     has_reasoning = true;
                                 }
-                                // 缩进✻图标宽度后，输出灰色斜体思考内容
-                                // 处理换行：每行都需要缩进
-                                for ch in reasoning_text.chars() {
-                                    if ch == '\n' {
-                                        println!("\x1b[0m");
-                                        print!("  \x1b[90m\x1b[3m");
-                                    } else {
-                                        print!("{}", ch);
-                                    }
-                                }
-                                std::io::Write::flush(&mut std::io::stdout()).ok();
+                                // 通过回调发送思考内容
+                                (self.output)(OutputMessage::ThinkingContent(reasoning_text.clone()));
                                 full_reasoning.push_str(&reasoning_text);
                             }
                         }
 
                         // 输出文本内容（只有非工具调用且非纯空白内容时才显示）
                         if !has_tool_call && !content.is_empty() && !content.trim().is_empty() {
-                            // 第一次输出正式内容时显示正式回答图标
-                            if !has_output {
-                                // 如果之前有思考内容，先换行清除缩进
-                                if has_reasoning {
-                                    println!("\x1b[0m");
-                                }
-                                println!();
-                                // 紫色✦图标，紧跟内容不换行
-                                print!("\x1b[35m✦\x1b[0m ");
-                                has_output = true;
-                            }
-                            print!("{}", content);
                             full_response.push_str(&content);
-                            std::io::Write::flush(&mut std::io::stdout()).ok();
+                            // 通过回调发送内容
+                            (self.output)(OutputMessage::Content(content));
                         }
 
                         if done {
