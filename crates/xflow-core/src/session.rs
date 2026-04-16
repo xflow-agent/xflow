@@ -239,10 +239,10 @@ impl Session {
                 if let Some(path) = args.get("path") {
                     if let Some(content) = args.get("content") {
                         let content_str = content.as_str().unwrap_or("");
-                        let preview = if content_str.len() > 100 {
-                            format!("{}...", &content_str[..100])
-                        } else {
-                            content_str.to_string()
+                        // 按字符截断，避免在 UTF-8 多字节字符中间切割
+                        let preview = match content_str.char_indices().nth(100) {
+                            Some((idx, _)) => format!("{}...", &content_str[..idx]),
+                            None => content_str.to_string(),
                         };
                         (format!("路径: {}\n内容预览: {}", path, preview), 0, None)
                     } else {
