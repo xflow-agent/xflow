@@ -82,47 +82,6 @@ impl ConfirmationResult {
     }
 }
 
-/// 进度阶段
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProgressPhase {
-    /// 准备中
-    Preparing,
-    /// 执行中
-    Executing,
-    /// 完成中
-    Finishing,
-}
-
-/// 进度报告
-#[derive(Debug, Clone)]
-pub struct Progress {
-    /// 进度阶段
-    pub phase: ProgressPhase,
-    /// 当前步骤
-    pub current: usize,
-    /// 总步骤
-    pub total: usize,
-    /// 消息
-    pub message: String,
-}
-
-impl Progress {
-    /// 创建新的进度报告
-    pub fn new(phase: ProgressPhase, current: usize, total: usize, message: impl Into<String>) -> Self {
-        Self {
-            phase,
-            current,
-            total,
-            message: message.into(),
-        }
-    }
-    
-    /// 创建执行进度
-    pub fn executing(current: usize, total: usize, message: impl Into<String>) -> Self {
-        Self::new(ProgressPhase::Executing, current, total, message)
-    }
-}
-
 /// 中断类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterruptType {
@@ -150,8 +109,6 @@ pub struct InterruptInfo {
 pub enum InteractionEvent {
     /// 确认请求
     ConfirmationRequest(ConfirmationRequest),
-    /// 进度更新
-    Progress(Progress),
     /// 输出内容
     Output(String),
     /// 错误
@@ -186,9 +143,6 @@ pub trait Interaction: Send + Sync {
     
     /// 设置中断标志
     fn set_interrupt(&self, info: InterruptInfo);
-    
-    /// 报告进度
-    fn report_progress(&self, progress: Progress);
     
     /// 输出内容
     fn output(&self, content: &str);
@@ -317,10 +271,6 @@ impl Interaction for AutoConfirmInteraction {
         self.context.set_interrupt(info);
     }
     
-    fn report_progress(&self, _progress: Progress) {
-        // 忽略进度
-    }
-    
     fn output(&self, _content: &str) {
         // 忽略输出
     }
@@ -444,15 +394,6 @@ impl Interaction for CliInteraction {
     
     fn set_interrupt(&self, info: InterruptInfo) {
         self.context.set_interrupt(info);
-    }
-    
-    fn report_progress(&self, progress: Progress) {
-        let phase_str = match progress.phase {
-            ProgressPhase::Preparing => "准备",
-            ProgressPhase::Executing => "执行",
-            ProgressPhase::Finishing => "完成",
-        };
-        println!("[{}/{}] {} - {}", progress.current, progress.total, phase_str, progress.message);
     }
     
     fn output(&self, content: &str) {

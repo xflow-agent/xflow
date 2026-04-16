@@ -41,24 +41,12 @@ pub struct ReadFileArgs {
 }
 
 /// read_file 工具
-pub struct ReadFileTool {
-    #[allow(dead_code)]
-    workdir: PathBuf,
-}
+pub struct ReadFileTool;
 
 impl ReadFileTool {
     /// 创建新实例
     pub fn new() -> Self {
-        Self {
-            workdir: PathBuf::from("."),
-        }
-    }
-
-    /// 设置工作目录
-    #[allow(dead_code)]
-    pub fn with_workdir(mut self, workdir: PathBuf) -> Self {
-        self.workdir = workdir;
-        self
+        Self
     }
 }
 

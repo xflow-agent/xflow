@@ -2,7 +2,7 @@
 //!
 //! 负责代码审查、分析、问题检测等任务
 
-use crate::agent::{Agent, AgentContext, AgentResponse, AgentType, Task, TaskType, ToolCallRequest};
+use crate::agent::{Agent, AgentContext, AgentResponse, AgentType, Task, ToolCallRequest};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -105,10 +105,6 @@ impl Agent for ReviewerAgent {
         "代码审查器，负责代码分析、问题检测、质量评估"
     }
 
-    fn can_handle(&self, task: &Task) -> bool {
-        matches!(task.task_type, TaskType::Review | TaskType::Analysis)
-    }
-
     fn system_prompt(&self) -> String {
         r#"你是一个专业的代码审查员 Agent，负责检查代码质量和发现问题。
 
@@ -192,15 +188,6 @@ impl Agent for ReviewerAgent {
             context_parts.push(format!("需要审查的文件:\n{}", context.relevant_files.join("\n")));
         }
         
-        // 添加之前任务的结果
-        if !context.previous_results.is_empty() {
-            let prev_summary: Vec<String> = context.previous_results.iter()
-                .take(3) // 最多3个之前的结果
-                .map(|r| r.output.chars().take(500).collect::<String>())
-                .collect();
-            context_parts.push(format!("之前任务的结果:\n{}", prev_summary.join("\n---\n")));
-        }
-        
         // 检查是否有工具执行结果
         let has_tool_results = !context.tool_results.is_empty();
         
@@ -237,7 +224,7 @@ impl Agent for ReviewerAgent {
 
         // 调用模型（带工具）
         let stream = provider
-            .chat_stream_with_tools(messages.clone(), self.tool_definitions.clone())
+            .chat_stream(messages.clone(), self.tool_definitions.clone())
             .await;
         
         // 处理响应
@@ -275,9 +262,7 @@ impl Agent for ReviewerAgent {
         Ok(AgentResponse {
             output: full_response,
             success: true,
-            subtasks: vec![],
             tool_calls,
-            next_steps: vec![],
         })
     }
 }

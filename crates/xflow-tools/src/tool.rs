@@ -1,31 +1,11 @@
 //! 工具 Trait 定义
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-
-/// 工具定义（用于告诉模型可用工具）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolDefinition {
-    /// 工具类型，固定为 "function"
-    #[serde(rename = "type")]
-    pub tool_type: String,
-    /// 函数信息
-    pub function: FunctionDefinition,
-}
-
-/// 函数定义
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FunctionDefinition {
-    /// 函数名称
-    pub name: String,
-    /// 函数描述
-    pub description: String,
-    /// 参数 Schema (JSON Schema)
-    pub parameters: serde_json::Value,
-}
+use serde::Deserialize;
+pub use xflow_model::{ToolDefinition, FunctionDefinition};
 
 /// 工具调用请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolCall {
     /// 调用 ID
     pub id: String,
@@ -37,7 +17,7 @@ pub struct ToolCall {
 }
 
 /// 函数调用
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FunctionCall {
     /// 函数名称
     pub name: String,
@@ -50,37 +30,6 @@ impl ToolCall {
     pub fn parse_args<T: for<'de> Deserialize<'de>>(&self) -> anyhow::Result<T> {
         let args: T = serde_json::from_str(&self.function.arguments)?;
         Ok(args)
-    }
-}
-
-/// 工具执行结果
-#[derive(Debug, Clone)]
-pub struct ToolResult {
-    /// 调用 ID
-    pub tool_call_id: String,
-    /// 结果内容
-    pub content: String,
-    /// 是否成功
-    pub success: bool,
-}
-
-impl ToolResult {
-    /// 创建成功结果
-    pub fn success(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
-        Self {
-            tool_call_id: tool_call_id.into(),
-            content: content.into(),
-            success: true,
-        }
-    }
-
-    /// 创建错误结果
-    pub fn error(tool_call_id: impl Into<String>, error: impl Into<String>) -> Self {
-        Self {
-            tool_call_id: tool_call_id.into(),
-            content: format!("错误: {}", error.into()),
-            success: false,
-        }
     }
 }
 

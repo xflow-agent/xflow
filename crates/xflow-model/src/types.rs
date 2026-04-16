@@ -103,19 +103,6 @@ impl Message {
         }
     }
 
-    /// 是否有工具调用
-    pub fn has_tool_calls(&self) -> bool {
-        !self.tool_calls.is_empty()
-    }
-}
-
-/// 模型响应
-#[derive(Debug, Clone)]
-pub struct Response {
-    pub content: String,
-    pub model: String,
-    pub done: bool,
-    pub tool_calls: Vec<ToolCall>,
 }
 
 /// 流式响应块
@@ -126,8 +113,6 @@ pub struct StreamChunk {
     pub done: bool,
     pub tool_calls: Vec<ToolCall>,
 }
-
-// === Ollama API 类型 ===
 
 /// 工具定义（用于告诉模型可用工具）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,54 +133,4 @@ pub struct FunctionDefinition {
     pub description: String,
     /// 参数 Schema (JSON Schema)
     pub parameters: serde_json::Value,
-}
-
-/// Ollama 请求
-#[derive(Debug, Serialize)]
-pub struct OllamaRequest {
-    pub model: String,
-    pub messages: Vec<Message>,
-    pub stream: bool,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub tools: Vec<ToolDefinition>,
-}
-
-/// Ollama 响应
-#[derive(Debug, Deserialize)]
-pub struct OllamaResponse {
-    pub model: String,
-    pub message: Option<OllamaMessage>,
-    pub done: bool,
-}
-
-/// Ollama 消息
-#[derive(Debug, Deserialize)]
-pub struct OllamaMessage {
-    pub role: String,
-    pub content: Option<String>,
-    #[serde(default)]
-    pub tool_calls: Vec<OllamaToolCall>,
-}
-
-/// Ollama 工具调用
-#[derive(Debug, Clone, Deserialize)]
-pub struct OllamaToolCall {
-    #[serde(default, rename = "type")]
-    pub call_type: String,
-    pub function: OllamaFunctionCall,
-}
-
-/// Ollama 函数调用
-#[derive(Debug, Clone, Deserialize)]
-pub struct OllamaFunctionCall {
-    pub name: String,
-    pub arguments: serde_json::Value,
-}
-
-/// Ollama 流式响应
-#[derive(Debug, Deserialize)]
-pub struct OllamaStreamResponse {
-    pub model: String,
-    pub message: Option<OllamaMessage>,
-    pub done: bool,
 }

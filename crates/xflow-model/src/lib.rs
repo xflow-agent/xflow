@@ -15,17 +15,8 @@ use std::pin::Pin;
 /// 模型提供者 Trait
 #[async_trait]
 pub trait ModelProvider: Send + Sync {
-    /// 发送消息并获取响应
-    async fn chat(&self, messages: Vec<Message>) -> Result<Response>;
-
-    /// 流式发送消息
-    async fn chat_stream(
-        &self,
-        messages: Vec<Message>,
-    ) -> Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Send>>;
-
     /// 流式发送消息（带工具支持）
-    async fn chat_stream_with_tools(
+    async fn chat_stream(
         &self,
         messages: Vec<Message>,
         tools: Vec<ToolDefinition>,

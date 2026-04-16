@@ -49,31 +49,33 @@ pub struct WriteFileArgs {
 }
 
 /// write_file 工具
-pub struct WriteFileTool {
-    #[allow(dead_code)]
-    workdir: PathBuf,
-}
+
+pub struct WriteFileTool;
+
+
 
 impl WriteFileTool {
+
     /// 创建新实例
+
     pub fn new() -> Self {
-        Self {
-            workdir: PathBuf::from("."),
-        }
+
+        Self
+
     }
 
-    /// 设置工作目录
-    #[allow(dead_code)]
-    pub fn with_workdir(mut self, workdir: PathBuf) -> Self {
-        self.workdir = workdir;
-        self
-    }
 }
 
+
+
 impl Default for WriteFileTool {
+
     fn default() -> Self {
+
         Self::new()
+
     }
+
 }
 
 #[async_trait]

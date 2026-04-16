@@ -68,14 +68,6 @@ class XflowApp {
             console.log('WebSocket 连接成功');
             this.connected = true;
             this.updateConnectionStatus('connected');
-            
-            // 如果有已保存的 session_id，尝试恢复会话
-            if (this.sessionId) {
-                this.ws.send(JSON.stringify({
-                    type: 'restore_session',
-                    session_id: this.sessionId
-                }));
-            }
         };
         
         this.ws.onclose = () => {

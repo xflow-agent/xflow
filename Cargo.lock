@@ -2735,7 +2735,6 @@ dependencies = [
  "futures",
  "serde",
  "serde_json",
- "thiserror",
  "tokio",
  "tracing",
  "xflow-context",
@@ -2753,7 +2752,6 @@ dependencies = [
  "ignore",
  "serde",
  "serde_json",
- "thiserror",
  "tokio",
  "tracing",
 ]
@@ -2768,7 +2766,6 @@ dependencies = [
  "inquire",
  "serde",
  "serde_json",
- "thiserror",
  "tokio",
  "tracing",
  "uuid",
@@ -2828,6 +2825,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "xflow-model",
 ]
 
 [[package]]

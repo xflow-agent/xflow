@@ -222,27 +222,6 @@ pub fn console_callback() -> OutputCallback {
 //     print!("  \x1b[90m\x1b[3m{}\x1b[0m", text);
 // }
 
-/// 创建空回调（用于测试）
-pub fn null_callback() -> OutputCallback {
-    Box::new(|_| {})
-}
-
-/// 创建通道回调（用于实时发送）
-pub fn channel_callback(tx: std::sync::mpsc::Sender<OutputMessage>) -> OutputCallback {
-    Box::new(move |msg| {
-        let _ = tx.send(msg);
-    })
-}
-
-/// 创建队列回调（用于收集消息）
-pub fn channel_callback_with_queue(queue: Arc<Mutex<Vec<OutputMessage>>>) -> OutputCallback {
-    Box::new(move |msg| {
-        if let Ok(mut q) = queue.lock() {
-            q.push(msg);
-        }
-    })
-}
-
 /// 创建实时回调（用于 WebSocket 实时发送）
 ///
 /// 使用 tokio::sync::mpsc::UnboundedSender，可以在同步回调中发送，

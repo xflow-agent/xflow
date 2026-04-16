@@ -9,7 +9,7 @@ use tracing::{debug, info, warn};
 use xflow_model::{Message, ModelProvider, StreamChunk, ToolCall, ToolDefinition};
 use xflow_tools::ToolRegistry;
 use xflow_context::ContextBuilder;
-use xflow_agent::{ReviewerAgent, CoderAgent, Agent, AgentContext, Task, TaskType, TaskStatus};
+use xflow_agent::{ReviewerAgent, Agent, AgentContext, Task};
 use crate::{OutputCallback, OutputMessage, console_callback};
 use crate::interaction::{Interaction, CliInteraction, ConfirmationRequest};
 
@@ -72,7 +72,7 @@ const SYSTEM_PROMPT_BASE: &str = r#"你是一个智能编程助手 xflow (心流
 
 ## 高级工具（重要！）
 
-### analyze_project - 项目分析工具
+### reviewer_agent - 项目分析工具
 
 **当用户说以下内容时，必须调用此工具，不要直接用 read_file：**
 - "分析项目"、"分析这个项目"、"分析所有功能"
@@ -81,19 +81,13 @@ const SYSTEM_PROMPT_BASE: &str = r#"你是一个智能编程助手 xflow (心流
 
 **示例：**
 用户: "分析一下这个项目的所有功能"
-正确做法: 调用 analyze_project(task="分析项目所有功能")
+正确做法: 调用 reviewer_agent(task="分析项目所有功能")
 错误做法: 直接调用 read_file(Cargo.toml) 然后输出结论
-
-### implement_feature - 功能实现工具
-
-**当用户要求实现新功能时，调用此工具：**
-- "实现xxx功能"、"添加xxx功能"
-- "创建xxx"、"编写xxx"
 
 ## 工作原则
 
-1. **识别任务类型**：先判断是"分析"还是"实现"还是"简单操作"
-2. **选择正确工具**：复杂任务用高级工具，简单任务用基础工具
+1. **识别任务类型**：先判断是"分析"还是"简单操作"
+2. **选择正确工具**：复杂分析任务用 reviewer_agent，简单任务用基础工具
 3. **完整执行**：不要中途停止，要完成所有必要的步骤
 4. **自动循环**：你会自动循环执行直到任务完全完成
 
@@ -101,15 +95,14 @@ const SYSTEM_PROMPT_BASE: &str = r#"你是一个智能编程助手 xflow (心流
 
 | 用户请求 | 正确做法 |
 |---------|---------|
-| "分析项目功能" | 调用 analyze_project |
-| "实现登录功能" | 调用 implement_feature |
+| "分析项目功能" | 调用 reviewer_agent |
 | "读取 main.rs" | 直接调用 read_file |
 | "执行 cargo build" | 直接调用 run_shell |
 
 ## 重要提醒
 
 - ❌ 不要在用户说"分析项目"时，只读取 Cargo.toml 就输出结论
-- ✅ 必须调用 analyze_project 工具执行完整分析流程
+- ✅ 必须调用 reviewer_agent 工具执行完整分析流程
 - ❌ 不要只建议用户做什么，而是直接执行
 - ✅ 完成所有必要的步骤后再输出结果"#;
 
@@ -230,18 +223,7 @@ impl Session {
 
     /// 获取工具定义列表
     fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
-        self.tools
-            .definitions()
-            .into_iter()
-            .map(|td| xflow_model::ToolDefinition {
-                tool_type: td.tool_type,
-                function: xflow_model::FunctionDefinition {
-                    name: td.function.name,
-                    description: td.function.description,
-                    parameters: td.function.parameters,
-                },
-            })
-            .collect()
+        self.tools.definitions()
     }
 
     /// 检查工具是否需要确认
@@ -368,7 +350,7 @@ impl Session {
             let tool_defs = self.get_tool_definitions();
             let stream = self
                 .provider
-                .chat_stream_with_tools(self.messages.clone(), tool_defs)
+                .chat_stream(self.messages.clone(), tool_defs)
                 .await;
 
             // 处理流式响应
@@ -474,10 +456,8 @@ impl Session {
                     // 执行工具
                     let (result, success) = if !confirmed {
                         ("操作已取消".to_string(), false)
-                    } else if tool_name == "analyze_project" {
+                    } else if tool_name == "reviewer_agent" {
                         (self.execute_reviewer_agent(tool_args.clone()).await, true)
-                    } else if tool_name == "implement_feature" {
-                        (self.execute_coder_agent(tool_args.clone()).await, true)
                     } else if let Some(tool) = self.tools.get(tool_name) {
                         match tool.execute(tool_args.clone()).await {
                             Ok(result) => (result, true),
@@ -556,12 +536,6 @@ impl Session {
         self.messages.len()
     }
 
-    /// 获取工作目录
-    #[allow(dead_code)]
-    pub fn workdir(&self) -> &PathBuf {
-        &self.workdir
-    }
-
     /// 执行 Reviewer Agent（项目分析）
     async fn execute_reviewer_agent(&self, args: serde_json::Value) -> String {
         let task_desc = args.get("task")
@@ -575,15 +549,16 @@ impl Session {
         let reviewer = ReviewerAgent::new();
         
         // 创建任务
-        let task = Task {
-            id: format!("review-{:?}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
-            description: task_desc.to_string(),
-            task_type: TaskType::Analysis,
-            subtasks: vec![],
-            status: TaskStatus::Pending,
-            priority: 5,
-            dependencies: vec![],
-        };
+        let task_id = format!("review-{:?}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+        let mut task = Task::new(&task_id, task_desc);
+        
+        // 开始任务
+        if let Err(e) = task.start() {
+            warn!("任务启动失败: {}", e);
+            return format!("任务启动失败: {}", e);
+        }
+        
+        debug!("任务 {} 已启动", task.id);
 
         // Agent 工具循环（只调用基础工具，不调用其它 Agent）
         let mut context = AgentContext::new(self.workdir.clone());
@@ -593,6 +568,7 @@ impl Session {
         loop {
             if iteration >= max_iterations {
                 warn!("Agent 达到最大迭代次数");
+                let _ = task.fail("达到最大迭代次数");
                 break;
             }
             
@@ -604,8 +580,10 @@ impl Session {
                         println!("{}", response.output);
                     }
                     
-                    // 如果没有工具调用，返回结果
+                    // 如果没有工具调用，任务完成
                     if response.tool_calls.is_empty() {
+                        let _ = task.complete();
+                        debug!("任务 {} 已完成", task.id);
                         return response.output;
                     }
                     
@@ -615,7 +593,7 @@ impl Session {
                         let tool_args = &tool_call.arguments;
                         
                         // 跳过 Agent 工具（Agent 不能调用其它 Agent）
-                        if tool_name == "analyze_project" || tool_name == "implement_feature" {
+                        if tool_name == "reviewer_agent" {
                             println!("[跳过 Agent 工具调用: {}]", tool_name);
                             continue;
                         }
@@ -646,103 +624,13 @@ impl Session {
                 }
                 Err(e) => {
                     warn!("Agent 执行失败: {}", e);
+                    let _ = task.fail(&e.to_string());
                     return format!("分析失败: {}", e);
                 }
             }
         }
         
+        debug!("任务 {} 状态: {:?}", task.id, task.status);
         "分析完成".to_string()
-    }
-
-    /// 执行 Coder Agent（功能实现）
-    async fn execute_coder_agent(&self, args: serde_json::Value) -> String {
-        let task_desc = args.get("task")
-            .and_then(|t| t.as_str())
-            .unwrap_or("实现功能");
-
-        info!("执行 Coder Agent: {}", task_desc);
-        println!("\n🔧 开始功能实现...");
-
-        // 创建 Agent 和上下文
-        let coder = CoderAgent::new();
-        
-        // 创建任务
-        let task = Task {
-            id: format!("code-{:?}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
-            description: task_desc.to_string(),
-            task_type: TaskType::Coding,
-            subtasks: vec![],
-            status: TaskStatus::Pending,
-            priority: 5,
-            dependencies: vec![],
-        };
-
-        // Agent 工具循环（只调用基础工具，不调用其它 Agent）
-        let mut context = AgentContext::new(self.workdir.clone());
-        let max_iterations = 10;
-        let mut iteration = 0;
-        
-        loop {
-            if iteration >= max_iterations {
-                warn!("Agent 达到最大迭代次数");
-                break;
-            }
-            
-            // 调用 Agent
-            match coder.execute(&task, &context, self.provider.clone()).await {
-                Ok(response) => {
-                    // 打印输出
-                    if !response.output.is_empty() {
-                        println!("{}", response.output);
-                    }
-                    
-                    // 如果没有工具调用，返回结果
-                    if response.tool_calls.is_empty() {
-                        return response.output;
-                    }
-                    
-                    // 执行工具调用
-                    for tool_call in &response.tool_calls {
-                        let tool_name = &tool_call.name;
-                        let tool_args = &tool_call.arguments;
-                        
-                        // 跳过 Agent 工具（Agent 不能调用其它 Agent）
-                        if tool_name == "analyze_project" || tool_name == "implement_feature" {
-                            println!("[跳过 Agent 工具调用: {}]", tool_name);
-                            continue;
-                        }
-                        
-                        println!("\n[Agent 调用工具: {}]", tool_name);
-                        
-                        // 执行基础工具
-                        let result = if let Some(tool) = self.tools.get(tool_name) {
-                            match tool.execute(tool_args.clone()).await {
-                                Ok(r) => r,
-                                Err(e) => format!("错误: {}", e),
-                            }
-                        } else {
-                            format!("未知工具: {}", tool_name)
-                        };
-                        
-                        println!("[结果: {} 字节]", result.len());
-                        
-                        // 将结果添加到上下文
-                        context.add_tool_result(xflow_agent::ToolResult {
-                            name: tool_name.clone(),
-                            result,
-                            success: true,
-                        });
-                    }
-                    
-                    iteration += 1;
-                }
-                Err(e) => {
-                    warn!("Agent 执行失败: {}", e);
-                    return format!("实现失败: {}", e);
-                }
-            }
-        }
-        
-        "实现完成".to_string()
     }
 }

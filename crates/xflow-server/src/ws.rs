@@ -68,8 +68,6 @@ pub enum WsResponse {
         danger_level: u8,
         danger_reason: Option<String>,
     },
-    /// 进度更新
-    Progress { phase: String, current: usize, total: usize, message: String },
 }
 
 /// WebSocket 连接参数
@@ -116,12 +114,6 @@ fn event_to_response(event: InteractionEvent) -> WsResponse {
             message: req.message,
             danger_level: req.danger_level,
             danger_reason: req.danger_reason,
-        },
-        InteractionEvent::Progress(progress) => WsResponse::Progress {
-            phase: format!("{:?}", progress.phase),
-            current: progress.current,
-            total: progress.total,
-            message: progress.message,
         },
         InteractionEvent::Output(text) => WsResponse::Content { text },
         InteractionEvent::Error(text) => WsResponse::Error { message: text },

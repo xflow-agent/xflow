@@ -14,24 +14,12 @@ pub struct ListDirectoryArgs {
 }
 
 /// list_directory 工具
-pub struct ListDirectoryTool {
-    #[allow(dead_code)]
-    workdir: PathBuf,
-}
+pub struct ListDirectoryTool;
 
 impl ListDirectoryTool {
     /// 创建新实例
     pub fn new() -> Self {
-        Self {
-            workdir: PathBuf::from("."),
-        }
-    }
-
-    /// 设置工作目录
-    #[allow(dead_code)]
-    pub fn with_workdir(mut self, workdir: PathBuf) -> Self {
-        self.workdir = workdir;
-        self
+        Self
     }
 }
 

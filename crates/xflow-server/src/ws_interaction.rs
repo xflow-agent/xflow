@@ -14,7 +14,6 @@ use xflow_core::{
     ConfirmationRequest,
     ConfirmationResult,
     InterruptInfo,
-    Progress,
 };
 
 /// WebSocket 交互实现
@@ -131,10 +130,6 @@ impl Interaction for WebSocketInteraction {
         self.context.set_interrupt(info);
     }
     
-    fn report_progress(&self, progress: Progress) {
-        let _ = self.event_tx.send(InteractionEvent::Progress(progress));
-    }
-    
     fn output(&self, content: &str) {
         let _ = self.event_tx.send(InteractionEvent::Output(content.to_string()));
     }
@@ -166,8 +161,6 @@ impl Interaction for WebSocketInteraction {
 ///
 /// 管理 WebSocket 连接的交互状态
 pub struct WebSocketInteractionManager {
-    /// 事件发送器
-    event_tx: mpsc::UnboundedSender<InteractionEvent>,
     /// 事件接收器（给 WebSocket handler 使用）
     event_rx: Mutex<Option<mpsc::UnboundedReceiver<InteractionEvent>>>,
     /// WebSocket 交互实例
@@ -180,12 +173,11 @@ impl WebSocketInteractionManager {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let pending_confirmations = Arc::new(Mutex::new(HashMap::new()));
         let interaction = Arc::new(WebSocketInteraction::new(
-            event_tx.clone(),
+            event_tx,
             pending_confirmations,
         ));
         
         Self {
-            event_tx,
             event_rx: Mutex::new(Some(event_rx)),
             interaction,
         }
@@ -201,11 +193,6 @@ impl WebSocketInteractionManager {
     /// 只能调用一次
     pub async fn take_event_rx(&self) -> Option<mpsc::UnboundedReceiver<InteractionEvent>> {
         self.event_rx.lock().await.take()
-    }
-    
-    /// 发送事件（用于没有接收器时直接发送）
-    pub fn send_event(&self, event: InteractionEvent) {
-        let _ = self.event_tx.send(event);
     }
 }
 

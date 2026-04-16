@@ -11,7 +11,7 @@ mod run_shell;
 mod git;
 mod agent_tool;
 
-pub use tool::{Tool, ToolCall, ToolResult, ToolDefinition};
+pub use tool::{Tool, ToolCall, ToolDefinition};
 pub use read_file::ReadFileTool;
 pub use write_file::WriteFileTool;
 pub use list_directory::ListDirectoryTool;
@@ -21,7 +21,7 @@ pub use git::{
     GitStatusTool, GitDiffTool, GitLogTool, GitCommitTool,
     GitAddTool, GitBranchTool,
 };
-pub use agent_tool::{ReviewerAgentTool, CoderAgentTool};
+pub use agent_tool::ReviewerAgentTool;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,22 +54,6 @@ impl ToolRegistry {
     pub fn definitions(&self) -> Vec<ToolDefinition> {
         self.tools.values().map(|t| t.definition()).collect()
     }
-
-    /// 检查工具是否存在
-    pub fn has(&self, name: &str) -> bool {
-        self.tools.contains_key(name)
-    }
-    
-    /// 获取需要确认的工具列表
-    pub fn tools_requiring_confirmation(&self) -> Vec<&'static str> {
-        // write_file 和 git_commit 需要确认
-        vec!["write_file", "run_shell", "git_commit"]
-    }
-    
-    /// 检查工具是否需要确认
-    pub fn needs_confirmation(&self, name: &str) -> bool {
-        Self::tools_requiring_confirmation(self).contains(&name)
-    }
 }
 
 impl Default for ToolRegistry {
@@ -100,8 +84,6 @@ pub fn create_default_tools() -> ToolRegistry {
     registry.register(Arc::new(GitBranchTool::new()));
     
     // Agent 工具（高级工具）
-    registry.register(Arc::new(ReviewerAgentTool::new()));
-    registry.register(Arc::new(CoderAgentTool::new()));
-    
+    registry.register(Arc::new(ReviewerAgentTool::new()));    
     registry
 }

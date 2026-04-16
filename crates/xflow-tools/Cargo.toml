@@ -10,3 +10,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+# 内部依赖
+xflow-model = { path = "../xflow-model" }

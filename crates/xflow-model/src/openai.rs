@@ -56,15 +56,6 @@ impl OpenAIProvider {
         format!("{}/chat/completions", self.base_url)
     }
 
-    /// 构建请求头
-    fn build_headers(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        if let Some(ref api_key) = self.api_key {
-            builder.header("Authorization", format!("Bearer {}", api_key))
-        } else {
-            builder
-        }
-    }
-
     /// 将消息转换为 OpenAI 格式
     fn convert_messages(&self, messages: Vec<Message>) -> Vec<OpenAIMessage> {
         messages
@@ -129,61 +120,7 @@ impl OpenAIProvider {
 
 #[async_trait]
 impl ModelProvider for OpenAIProvider {
-    async fn chat(&self, messages: Vec<Message>) -> Result<Response> {
-        let request = OpenAIRequest {
-            model: self.model.clone(),
-            messages: self.convert_messages(messages),
-            stream: false,
-            tools: vec![],
-            tool_choice: None,
-        };
-
-        debug!("发送请求到 {}: {:?}", self.provider_name, request);
-
-        let builder = self.client.post(self.chat_url()).json(&request);
-        let response = self.build_headers(builder).send().await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(Error::Model(format!(
-                "{} 返回错误状态 {}: {}",
-                self.provider_name, status, text
-            )));
-        }
-
-        let openai_resp: OpenAIResponse = response.json().await?;
-
-        let choice = openai_resp.choices.into_iter().next()
-            .ok_or_else(|| Error::Model("响应中没有 choices".to_string()))?;
-
-        Ok(Response {
-            content: choice.message.content.unwrap_or_default(),
-            model: openai_resp.model,
-            done: true,
-            tool_calls: choice.message.tool_calls.map(|tcs| {
-                tcs.into_iter()
-                    .map(|tc| ToolCall {
-                        call_type: tc.call_type,
-                        function: FunctionCall {
-                            name: tc.function.name,
-                            arguments: serde_json::from_str(&tc.function.arguments)
-                                .unwrap_or(serde_json::Value::Null),
-                        },
-                    })
-                    .collect()
-            }).unwrap_or_default(),
-        })
-    }
-
     async fn chat_stream(
-        &self,
-        messages: Vec<Message>,
-    ) -> Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Send>> {
-        self.chat_stream_with_tools(messages, vec![]).await
-    }
-
-    async fn chat_stream_with_tools(
         &self,
         messages: Vec<Message>,
         tools: Vec<ToolDefinition>,

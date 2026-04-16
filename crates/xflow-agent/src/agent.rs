@@ -11,23 +11,14 @@ use xflow_model::ModelProvider;
 /// Agent 类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AgentType {
-    /// 规划器 - 负责任务分解
-    Planner,
-    /// 编码器 - 负责代码编写
-    Coder,
-    /// 审查器 - 负责代码审查
+    /// 审查器 - 负责代码审查、分析
     Reviewer,
-    /// 通用 Agent - 处理一般任务
-    General,
 }
 
 impl std::fmt::Display for AgentType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AgentType::Planner => write!(f, "规划器"),
-            AgentType::Coder => write!(f, "编码器"),
             AgentType::Reviewer => write!(f, "审查器"),
-            AgentType::General => write!(f, "通用"),
         }
     }
 }
@@ -39,31 +30,11 @@ pub struct Task {
     pub id: String,
     /// 任务描述
     pub description: String,
-    /// 任务类型
-    pub task_type: TaskType,
-    /// 子任务列表
-    pub subtasks: Vec<Task>,
     /// 任务状态
     pub status: TaskStatus,
-    /// 优先级 (1-10, 10 最高)
-    pub priority: u8,
-    /// 依赖的任务 ID
-    pub dependencies: Vec<String>,
-}
-
-/// 任务类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TaskType {
-    /// 复杂任务 - 需要分解
-    Complex,
-    /// 编码任务
-    Coding,
-    /// 审查任务
-    Review,
-    /// 分析任务
-    Analysis,
-    /// 简单任务 - 直接执行
-    Simple,
+    /// 错误信息（失败时记录）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// 任务状态
@@ -83,6 +54,54 @@ pub enum TaskStatus {
     Skipped,
 }
 
+impl Task {
+    /// 创建新任务
+    pub fn new(id: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            description: description.into(),
+            status: TaskStatus::Pending,
+            error: None,
+        }
+    }
+
+    /// 开始任务
+    pub fn start(&mut self) -> anyhow::Result<()> {
+        if self.status != TaskStatus::Pending {
+            anyhow::bail!("任务 {} 状态为 {:?}，无法启动", self.id, self.status);
+        }
+        self.status = TaskStatus::InProgress;
+        Ok(())
+    }
+
+    /// 完成任务
+    pub fn complete(&mut self) -> anyhow::Result<()> {
+        if self.status != TaskStatus::InProgress {
+            anyhow::bail!("任务 {} 状态为 {:?}，无法完成", self.id, self.status);
+        }
+        self.status = TaskStatus::Completed;
+        Ok(())
+    }
+
+    /// 任务失败
+    pub fn fail(&mut self, error: impl Into<String>) -> anyhow::Result<()> {
+        self.status = TaskStatus::Failed;
+        self.error = Some(error.into());
+        Ok(())
+    }
+
+    /// 跳过任务
+    pub fn skip(&mut self, reason: impl Into<String>) {
+        self.status = TaskStatus::Skipped;
+        self.error = Some(reason.into());
+    }
+
+    /// 是否已完成（成功或失败）
+    pub fn is_finished(&self) -> bool {
+        matches!(self.status, TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Skipped)
+    }
+}
+
 
 /// Agent 执行响应
 #[derive(Debug, Clone)]
@@ -91,12 +110,8 @@ pub struct AgentResponse {
     pub output: String,
     /// 是否成功
     pub success: bool,
-    /// 生成的子任务
-    pub subtasks: Vec<Task>,
     /// 需要的工具调用
     pub tool_calls: Vec<ToolCallRequest>,
-    /// 下一步建议
-    pub next_steps: Vec<String>,
 }
 
 /// 工具调用请求
@@ -128,8 +143,6 @@ pub struct AgentContext {
     pub language: Option<String>,
     /// 相关文件
     pub relevant_files: Vec<String>,
-    /// 之前任务的结果
-    pub previous_results: Vec<AgentResponse>,
     /// 当前任务
     pub current_task: Option<Task>,
     /// 工具执行结果（本轮）
@@ -143,32 +156,14 @@ impl AgentContext {
             workdir,
             language: None,
             relevant_files: Vec::new(),
-            previous_results: Vec::new(),
             current_task: None,
             tool_results: Vec::new(),
         }
-    }
-
-    /// 添加相关文件
-    pub fn add_file(&mut self, file: String) {
-        if !self.relevant_files.contains(&file) {
-            self.relevant_files.push(file);
-        }
-    }
-
-    /// 添加之前的结果
-    pub fn add_result(&mut self, result: AgentResponse) {
-        self.previous_results.push(result);
     }
     
     /// 添加工具结果
     pub fn add_tool_result(&mut self, result: ToolResult) {
         self.tool_results.push(result);
-    }
-    
-    /// 清空工具结果
-    pub fn clear_tool_results(&mut self) {
-        self.tool_results.clear();
     }
     
     /// 获取工具结果的文本描述（用于注入到 prompt）
@@ -213,9 +208,6 @@ pub trait Agent: Send + Sync {
 
     /// 获取 Agent 描述
     fn description(&self) -> &str;
-
-    /// 判断是否能处理该任务
-    fn can_handle(&self, task: &Task) -> bool;
 
     /// 执行任务
     async fn execute(
