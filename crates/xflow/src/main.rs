@@ -50,8 +50,8 @@ async fn main() -> Result<()> {
 
     info!("启动 xflow...");
     info!("Base URL: {}", args.base_url);
-    info!("模型: {}", args.model);
-    info!("目录: {:?}", args.workdir);
+    info!("模型：{}", args.model);
+    info!("目录：{:?}", args.workdir);
 
     // 创建模型提供者 (OpenAI 兼容模式)
     let provider: Arc<dyn ModelProvider> = Arc::new(OpenAIProvider::new(
@@ -71,13 +71,22 @@ async fn main() -> Result<()> {
 /// 初始化日志系统
 fn init_logging(debug: bool) {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+    use chrono::Local;
     
-    // 日志文件路径
+    // 日志文件路径 - 使用日期命名：xflow-20260416.log
     let log_dir = dirs::data_dir()
         .map(|p| p.join("xflow/logs"))
         .unwrap_or_else(std::env::temp_dir);
     let _ = std::fs::create_dir_all(&log_dir);
-    let log_file = log_dir.join("xflow.log");
+    
+    // 获取当前日期，格式：20260416
+    let date_str = Local::now().format("%Y%m%d").to_string();
+    let log_file = log_dir.join(format!("xflow-{}.log", date_str));
+    
+    // 自定义时间格式：2026-04-14 15:11:45.823
+    let time_format = tracing_subscriber::fmt::time::ChronoLocal::new(
+        "%Y-%m-%d %H:%M:%S%.3f".parse().unwrap()
+    );
     
     // 创建文件日志层
     let file_layer = tracing_subscriber::fmt::layer()
@@ -86,13 +95,15 @@ fn init_logging(debug: bool) {
             .append(true)
             .open(&log_file)
             .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap()))
-        .with_ansi(false);
+        .with_ansi(false)
+        .with_timer(time_format.clone());
     
     if debug {
         // 调试模式：同时输出到文件和控制台
         let console_layer = tracing_subscriber::fmt::layer()
             .with_writer(std::io::stderr)
-            .with_target(false);
+            .with_target(false)
+            .with_timer(time_format);
         
         tracing_subscriber::registry()
             .with(tracing_subscriber::EnvFilter::try_from_default_env()

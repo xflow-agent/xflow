@@ -18,5 +18,5 @@ rustyline.workspace = true
 inquire.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["chrono"] }
 dirs.workspace = true

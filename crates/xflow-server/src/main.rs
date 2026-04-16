@@ -3,6 +3,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::fs;
 
 use axum::{
     routing::get,
@@ -54,23 +55,17 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 初始化日志
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "xflow_server=debug,xflow=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-
     // 解析参数
     let args = Args::parse();
 
+    // 初始化日志
+    init_logging();
+
     tracing::info!("启动 xflow Web 服务器");
-    tracing::info!("  监听地址: {}", args.addr);
+    tracing::info!("  监听地址：{}", args.addr);
     tracing::info!("  Base URL: {}", args.base_url);
-    tracing::info!("  模型: {}", args.model);
-    tracing::info!("  工作目录: {}", args.workdir);
+    tracing::info!("  模型：{}", args.model);
+    tracing::info!("  工作目录：{}", args.workdir);
 
     // 创建模型提供者 (OpenAI 兼容模式)
     let provider: Arc<dyn ModelProvider> = Arc::new(OpenAIProvider::new(
@@ -107,15 +102,72 @@ async fn main() -> anyhow::Result<()> {
                 .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
                 .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
         )
-        // 日志
-        .layer(TraceLayer::new_for_http());
+        // 日志 - 禁用 ANSI 颜色
+        .layer(TraceLayer::new_for_http()
+            .make_span_with(|request: &axum::http::Request<_>| {
+                tracing::info_span!("HTTP request", method = ?request.method(), uri = ?request.uri())
+            })
+            .on_request(|request: &axum::http::Request<_>, _meta: &tower_http::trace::MakeSpan| {
+                tracing::debug!("收到请求：{} {}", request.method(), request.uri());
+            })
+            .on_response(|response: &axum::http::Response<_>, _latency: tower_http::trace::Latency, _meta: &tower_http::trace::RequestLayer| {
+                tracing::debug!("响应状态：{}", response.status());
+            }));
 
     // 启动服务器
     let addr: SocketAddr = args.addr.parse()?;
-    tracing::info!("服务器启动: http://{}", addr);
+    tracing::info!("服务器启动：http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// 初始化日志系统
+fn init_logging() {
+    use chrono::Local;
+    
+    // 日志文件路径 - 与 xflow 相同：~/.local/share/xflow/logs
+    let log_dir = dirs::data_dir()
+        .map(|p| p.join("xflow/logs"))
+        .unwrap_or_else(std::env::temp_dir);
+    let _ = fs::create_dir_all(&log_dir);
+    
+    // 获取当前日期，格式：20260416
+    let date_str = Local::now().format("%Y%m%d").to_string();
+    let log_file = log_dir.join(format!("xflow-server-{}.log", date_str));
+    
+    // 自定义时间格式：2026-04-14 15:11:45.823
+    let time_format = tracing_subscriber::fmt::time::ChronoLocal::new(
+        "%Y-%m-%d %H:%M:%S%.3f".parse().unwrap()
+    );
+    
+    // 创建文件日志层 - 禁用 ANSI 颜色
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file)
+            .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap()))
+        .with_ansi(false)
+        .with_file(true)
+        .with_line_number(true)
+        .with_timer(time_format.clone());
+    
+    // 控制台输出层 - 保留 ANSI 颜色
+    let console_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_target(false)
+        .with_ansi(true)
+        .with_timer(time_format);
+    
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "xflow_server=debug,xflow=debug".into()),
+        )
+        .with(file_layer)
+        .with(console_layer)
+        .init();
 }
