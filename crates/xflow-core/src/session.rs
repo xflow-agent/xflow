@@ -375,8 +375,7 @@ impl Session {
             let mut full_response = String::new();
             let mut full_reasoning = String::new();
             let mut tool_calls: Vec<ToolCall> = Vec::new();
-            let mut has_reasoning = false;
-            let mut has_tool_call = false;
+            let mut in_tool_call_mode = false;  // 用于判断是否应该输出内容
             let mut animation_stopped = false;
 
             use futures::StreamExt;
@@ -390,25 +389,16 @@ impl Session {
                         done,
                         tool_calls: chunk_tool_calls,
                     }) => {
-                        // 收到第一个响应时停止动画
-                        if !animation_stopped {
-                            animation_running.store(false, Ordering::Relaxed);
-                            println!(); // CLI: 换行结束动画行
-                            animation_stopped = true;
-                        }
-
                         // 收集工具调用（先收集，稍后处理）
                         if !chunk_tool_calls.is_empty() {
-                            if !has_tool_call {
-                                // 第一次工具调用前换行（CLI 显示用）
-                                if has_reasoning {
-                                    println!("\x1b[0m"); // CLI: 关闭样式
-                                    if !full_reasoning.ends_with('\n') {
-                                        println!();
-                                    }
-                                }
-                                println!(); // CLI: 换行
-                                has_tool_call = true;
+                            // 收到工具调用时停止动画
+                            if !animation_stopped {
+                                animation_running.store(false, Ordering::Relaxed);
+                                println!(); // CLI: 换行结束动画行
+                                animation_stopped = true;
+                            }
+                            if !in_tool_call_mode {
+                                in_tool_call_mode = true;
                             }
                             tool_calls.extend(chunk_tool_calls);
                         }
@@ -416,20 +406,20 @@ impl Session {
                         // 输出思考内容（通过回调发送）
                         if let Some(reasoning_text) = reasoning {
                             if !reasoning_text.is_empty() {
-                                // 第一次输出思考内容
-                                if !has_reasoning {
-                                    has_reasoning = true;
-                                }
-                                // 通过回调发送思考内容
                                 (self.output)(OutputMessage::ThinkingContent(reasoning_text.clone()));
                                 full_reasoning.push_str(&reasoning_text);
                             }
                         }
 
                         // 输出文本内容（只有非工具调用且非纯空白内容时才显示）
-                        if !has_tool_call && !content.is_empty() && !content.trim().is_empty() {
+                        if !in_tool_call_mode && !content.is_empty() && !content.trim().is_empty() {
+                            // 收到正式内容时停止动画
+                            if !animation_stopped {
+                                animation_running.store(false, Ordering::Relaxed);
+                                println!(); // CLI: 换行结束动画行
+                                animation_stopped = true;
+                            }
                             full_response.push_str(&content);
-                            // 通过回调发送内容
                             (self.output)(OutputMessage::Content(content));
                         }
 
