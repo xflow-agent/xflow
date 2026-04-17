@@ -106,12 +106,6 @@ async fn main() -> anyhow::Result<()> {
         .layer(TraceLayer::new_for_http()
             .make_span_with(|request: &axum::http::Request<_>| {
                 tracing::info_span!("HTTP request", method = ?request.method(), uri = ?request.uri())
-            })
-            .on_request(|request: &axum::http::Request<_>, _meta: &tower_http::trace::MakeSpan| {
-                tracing::debug!("收到请求：{} {}", request.method(), request.uri());
-            })
-            .on_response(|response: &axum::http::Response<_>, _latency: tower_http::trace::Latency, _meta: &tower_http::trace::RequestLayer| {
-                tracing::debug!("响应状态：{}", response.status());
             }));
 
     // 启动服务器

@@ -42,7 +42,10 @@ anyhow = "1.0"
 
 # 日志
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
+
+# 时间
+chrono = "0.4"
 
 # 异步 trait
 async-trait = "0.1"

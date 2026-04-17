@@ -36,4 +36,10 @@ tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # 日志
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["chrono"] }
+
+# 时间
+chrono = { workspace = true }
+
+# 路径
+dirs = { workspace = true }

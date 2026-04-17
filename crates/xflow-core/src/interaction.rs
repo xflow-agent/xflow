@@ -135,6 +135,26 @@ pub trait Interaction: Send + Sync {
     /// 阻塞直到收到响应或超时
     async fn request_confirmation(&self, req: ConfirmationRequest) -> ConfirmationResult;
     
+    /// 请求重试
+    ///
+    /// 当操作失败时询问用户是否重试
+    async fn request_retry(&self, error_msg: &str) -> bool {
+        // 默认实现：显示错误并询问是否重试
+        println!("\n\x1b[31m✗ {}\x1b[0m", error_msg);
+        
+        match inquire::Confirm::new("是否重试?")
+            .with_default(false)
+            .prompt()
+        {
+            Ok(true) => true,
+            Ok(false) => false,
+            Err(e) => {
+                tracing::warn!("重试确认错误：{}", e);
+                false
+            }
+        }
+    }
+    
     /// 检查是否被中断
     fn check_interrupt(&self) -> bool;
     
@@ -259,6 +279,11 @@ impl Interaction for AutoConfirmInteraction {
         }
     }
     
+    async fn request_retry(&self, _error_msg: &str) -> bool {
+        // 自动确认模式下不重试
+        false
+    }
+    
     fn check_interrupt(&self) -> bool {
         self.context.is_interrupted()
     }
@@ -332,10 +357,10 @@ impl Default for CliInteraction {
 #[async_trait::async_trait]
 impl Interaction for CliInteraction {
     async fn request_confirmation(&self, req: ConfirmationRequest) -> ConfirmationResult {
-        // 显示确认对话框
-        println!("\n{}", "=".repeat(50));
+        // 显示工具名（带图标和缩进）
+        println!();
         
-        // 显示危险等级
+        // 显示危险等级（如果有）
         if req.danger_level > 0 {
             let level_display = match req.danger_level {
                 3 => "🔴 极度危险",
@@ -344,20 +369,21 @@ impl Interaction for CliInteraction {
                 _ => "⚠️ 需要注意",
             };
             if let Some(ref reason) = req.danger_reason {
-                println!("{} - {}", level_display, reason);
+                println!("  \x1b[33m⚠️  {} - {}\x1b[0m", level_display, reason);
             } else {
-                println!("{}", level_display);
+                println!("  \x1b[33m⚠️  {}\x1b[0m", level_display);
             }
-        } else {
-            println!("⚠️  需要确认操作");
         }
         
-        println!("{}", "=".repeat(50));
-        println!("工具: {}", req.tool);
-        println!("{}", req.message);
-        println!("{}", "=".repeat(50));
+        // 显示详情信息（灰色，带缩进）
+        println!("  \x1b[90m工具:\x1b[0m {}", req.tool);
+        if !req.message.is_empty() {
+            for line in req.message.lines() {
+                println!("  \x1b[90m{}\x1b[0m", line);
+            }
+        }
 
-        // 使用 inquire 进行确认
+        // 使用 inquire 进行确认，默认 Yes
         let confirm_msg = if req.danger_level > 0 {
             "⚠️  确认执行此危险操作?"
         } else {
@@ -365,20 +391,20 @@ impl Interaction for CliInteraction {
         };
         
         match inquire::Confirm::new(confirm_msg)
-            .with_default(false)
+            .with_default(true)  // 默认 Yes
             .prompt()
         {
             Ok(true) => {
-                println!("✓ 已确认，执行操作...");
+                println!("  \x1b[32m✓ 执行操作...\x1b[0m");
                 ConfirmationResult::approved()
             }
             Ok(false) => {
-                println!("✗ 已取消");
+                println!("  \x1b[33m✗ 已取消\x1b[0m");
                 ConfirmationResult::cancelled()
             }
             Err(e) => {
                 tracing::warn!("确认对话框错误: {}", e);
-                println!("✗ 确认失败，已取消");
+                println!("  \x1b[31m✗ 确认失败，已取消\x1b[0m");
                 ConfirmationResult::rejected(e.to_string())
             }
         }
@@ -398,6 +424,33 @@ impl Interaction for CliInteraction {
     
     fn output(&self, content: &str) {
         (self.output_fn)(content);
+    }
+    
+    async fn request_retry(&self, error_msg: &str) -> bool {
+        // 显示错误信息（带颜色）
+        println!("\n\x1b[31m✗ 操作失败\x1b[0m");
+        for line in error_msg.lines() {
+            println!("  \x1b[90m{}\x1b[0m", line);
+        }
+        
+        // 询问是否重试
+        match inquire::Confirm::new("\n是否重试？")
+            .with_default(false)
+            .prompt()
+        {
+            Ok(true) => {
+                println!("  \x1b[32m✓ 重新尝试...\x1b[0m");
+                true
+            }
+            Ok(false) => {
+                println!("  \x1b[33m✗ 已取消\x1b[0m");
+                false
+            }
+            Err(e) => {
+                tracing::warn!("重试确认错误：{}", e);
+                false
+            }
+        }
     }
     
     fn output_error(&self, error: &str) {

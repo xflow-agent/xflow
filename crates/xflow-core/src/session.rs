@@ -16,7 +16,7 @@ use crate::interaction::{Interaction, CliInteraction, ConfirmationRequest};
 /// 最大工具调用循环次数
 const MAX_TOOL_LOOPS: usize = 20;
 
-/// 等待动画最大点数（一行终端大约80字符，留足空间）
+/// 等待动画最大点数（一行终端大约 80 字符，留足空间）
 const MAX_DOTS: usize = 60;
 
 /// 需要确认的工具列表
@@ -80,9 +80,9 @@ const SYSTEM_PROMPT_BASE: &str = r#"你是一个智能编程助手 xflow (心流
 - "了解这个项目"、"理解项目"
 
 **示例：**
-用户: "分析一下这个项目的所有功能"
-正确做法: 调用 reviewer_agent(task="分析项目所有功能")
-错误做法: 直接调用 read_file(Cargo.toml) 然后输出结论
+用户："分析一下这个项目的所有功能"
+正确做法：调用 reviewer_agent(task="分析项目所有功能")
+错误做法：直接调用 read_file(Cargo.toml) 然后输出结论
 
 ## 工作原则
 
@@ -205,7 +205,7 @@ impl Session {
 
     /// 初始化项目上下文（扫描项目并生成上下文信息）
     pub fn init_project_context(&mut self) -> Result<()> {
-        info!("初始化项目上下文: {:?}", self.workdir);
+        info!("初始化项目上下文：{:?}", self.workdir);
         
         let builder = ContextBuilder::new(self.workdir.clone());
         match builder.generate_system_context() {
@@ -214,7 +214,7 @@ impl Session {
                 self.project_context = Some(context);
             }
             Err(e) => {
-                warn!("项目上下文初始化失败: {}", e);
+                warn!("项目上下文初始化失败：{}", e);
             }
         }
         
@@ -244,9 +244,9 @@ impl Session {
                             Some((idx, _)) => format!("{}...", &content_str[..idx]),
                             None => content_str.to_string(),
                         };
-                        (format!("路径: {}\n内容预览: {}", path, preview), 0, None)
+                        (format!("路径：{}\n内容预览：{}", path, preview), 0, None)
                     } else {
-                        (format!("路径: {}", path), 0, None)
+                        (format!("路径：{}", path), 0, None)
                     }
                 } else {
                     (args.to_string(), 0, None)
@@ -261,7 +261,7 @@ impl Session {
                     } else {
                         (0, None)
                     };
-                    (format!("命令: {}", cmd), level, reason)
+                    (format!("命令：{}", cmd), level, reason)
                 } else {
                     (args.to_string(), 0, None)
                 }
@@ -300,7 +300,7 @@ impl Session {
         // 添加用户消息
         self.messages.push(Message::user(input));
 
-        debug!("当前消息数量: {}", self.messages.len());
+        debug!("当前消息数量：{}", self.messages.len());
 
         // 工具调用循环
         let mut loop_count = 0;
@@ -308,7 +308,7 @@ impl Session {
 
         loop {
             if loop_count >= MAX_TOOL_LOOPS {
-                warn!("达到最大工具调用循环次数: {}", MAX_TOOL_LOOPS);
+                warn!("达到最大工具调用循环次数：{}", MAX_TOOL_LOOPS);
                 (self.output)(OutputMessage::Error(format!(
                     "已达到最大循环次数 ({}), 停止自动执行", MAX_TOOL_LOOPS
                 )));
@@ -376,7 +376,6 @@ impl Session {
                             // 收到工具调用时停止动画
                             if !animation_stopped {
                                 animation_running.store(false, Ordering::Relaxed);
-                                println!(); // CLI: 换行结束动画行
                                 animation_stopped = true;
                             }
                             if !in_tool_call_mode {
@@ -388,6 +387,11 @@ impl Session {
                         // 输出思考内容（通过回调发送）
                         if let Some(reasoning_text) = reasoning {
                             if !reasoning_text.is_empty() {
+                                // 收到思考内容时立即停止动画
+                                if !animation_stopped {
+                                    animation_running.store(false, Ordering::Relaxed);
+                                    animation_stopped = true;
+                                }
                                 (self.output)(OutputMessage::ThinkingContent(reasoning_text.clone()));
                                 full_reasoning.push_str(&reasoning_text);
                             }
@@ -398,7 +402,6 @@ impl Session {
                             // 收到正式内容时停止动画
                             if !animation_stopped {
                                 animation_running.store(false, Ordering::Relaxed);
-                                println!(); // CLI: 换行结束动画行
                                 animation_stopped = true;
                             }
                             full_response.push_str(&content);
@@ -410,9 +413,41 @@ impl Session {
                         }
                     }
                     Err(e) => {
-                        tracing::error!("流式响应错误: {}", e);
-                        (self.output)(OutputMessage::Error(e.to_string()));
-                        return Err(e.into());
+                        tracing::error!("流式响应错误：{}", e);
+                        
+                        // 停止动画
+                        if !animation_stopped {
+                            animation_running.store(false, Ordering::Relaxed);
+                            animation_stopped = true;
+                        }
+                        
+                        // 显示友好错误信息
+                        let error_msg = if e.to_string().contains("timeout") {
+                            "请求超时。可能原因：\n  - 网络连接不稳定\n  - API 服务器响应缓慢\n  - 请求上下文过大\n".to_string()
+                        } else if e.to_string().contains("connection") {
+                            "连接错误。请检查：\n  - API 服务器是否正常运行\n  - 网络连接是否正常\n  - Base URL 配置是否正确\n".to_string()
+                        } else {
+                            format!("请求失败：{}", e)
+                        };
+                        
+                        (self.output)(OutputMessage::Error(error_msg.clone()));
+                        
+                        // 询问用户是否重试
+                        let retry = self.interaction.request_retry(&error_msg).await;
+                        if retry {
+                            // 重新开始循环
+                            (self.output)(OutputMessage::Content("\n重新尝试...\n".to_string()));
+                            loop_count += 1;
+                            if loop_count >= MAX_TOOL_LOOPS {
+                                (self.output)(OutputMessage::Error("已达到最大重试次数，请检查网络或服务器配置".to_string()));
+                                return Err(anyhow::anyhow!("达到最大重试次数"));
+                            }
+                            continue;
+                        } else {
+                            // 用户选择不重试，结束当前对话
+                            (self.output)(OutputMessage::Content("\n操作已取消。输入新命令继续。".to_string()));
+                            break;
+                        }
                     }
                 }
             }
@@ -444,7 +479,7 @@ impl Session {
                         args: tool_args.to_string(),
                         params_display,
                     });
-                    debug!("工具参数: {}", tool_args);
+                    debug!("工具参数：{}", tool_args);
 
                     // 检查是否需要确认
                     let confirmed = if self.needs_confirmation(tool_name) {
@@ -461,10 +496,10 @@ impl Session {
                     } else if let Some(tool) = self.tools.get(tool_name) {
                         match tool.execute(tool_args.clone()).await {
                             Ok(result) => (result, true),
-                            Err(e) => (format!("工具执行错误: {}", e), false),
+                            Err(e) => (format!("工具执行错误：{}", e), false),
                         }
                     } else {
-                        (format!("未知工具: {}", tool_name), false)
+                        (format!("未知工具：{}", tool_name), false)
                     };
 
                     // 显示结果
@@ -479,7 +514,7 @@ impl Session {
                         result_size: result.len(),
                         success,
                     });
-                    debug!("工具结果: {} bytes", result.len());
+                    debug!("工具结果：{} bytes", result.len());
 
                     // 添加工具结果消息
                     self.messages
@@ -543,10 +578,17 @@ impl Session {
             .unwrap_or("分析项目");
 
         info!("执行 Reviewer Agent: {}", task_desc);
-        println!("\n📊 开始项目分析...");
+        // 修复：使用输出回调而不是 println!
+        (self.output)(OutputMessage::Content("\n📊 开始项目分析...\n".to_string()));
 
-        // 创建 Agent
-        let reviewer = ReviewerAgent::new();
+        // 创建 Agent，并传入输出回调
+        // 简单方式：直接在循环中使用 self.output，不需要 clone
+        let mut reviewer = ReviewerAgent::new();
+        reviewer.set_output_callback(Box::new(|text| {
+            // 这个闭包会捕获 self.output，但由于是 Box<dyn Fn>，不能直接 clone
+            // 所以我们在下面循环中直接调用 self.output
+            let _ = text; // 避免未使用变量警告
+        }));
         
         // 创建任务
         let task_id = format!("review-{:?}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
@@ -554,8 +596,8 @@ impl Session {
         
         // 开始任务
         if let Err(e) = task.start() {
-            warn!("任务启动失败: {}", e);
-            return format!("任务启动失败: {}", e);
+            warn!("任务启动失败：{}", e);
+            return format!("任务启动失败：{}", e);
         }
         
         debug!("任务 {} 已启动", task.id);
@@ -575,9 +617,9 @@ impl Session {
             // 调用 Agent
             match reviewer.execute(&task, &context, self.provider.clone()).await {
                 Ok(response) => {
-                    // 打印输出
+                    // 如果输出非空，通过回调发送
                     if !response.output.is_empty() {
-                        println!("{}", response.output);
+                        (self.output)(OutputMessage::Content(response.output.clone()));
                     }
                     
                     // 如果没有工具调用，任务完成
@@ -594,23 +636,26 @@ impl Session {
                         
                         // 跳过 Agent 工具（Agent 不能调用其它 Agent）
                         if tool_name == "reviewer_agent" {
-                            println!("[跳过 Agent 工具调用: {}]", tool_name);
+                            // 修复：使用 tracing 而不是 println!
+                            tracing::debug!("跳过 Agent 工具调用：{}", tool_name);
                             continue;
                         }
                         
-                        println!("\n[Agent 调用工具: {}]", tool_name);
+                        // 修复：使用输出回调而不是 println!
+                        (self.output)(OutputMessage::Content(format!("\n[Agent 调用工具：{}]", tool_name)));
                         
                         // 执行基础工具
                         let result = if let Some(tool) = self.tools.get(tool_name) {
                             match tool.execute(tool_args.clone()).await {
                                 Ok(r) => r,
-                                Err(e) => format!("错误: {}", e),
+                                Err(e) => format!("错误：{}", e),
                             }
                         } else {
-                            format!("未知工具: {}", tool_name)
+                            format!("未知工具：{}", tool_name)
                         };
                         
-                        println!("[结果: {} 字节]", result.len());
+                        // 修复：使用 tracing 而不是 println!
+                        tracing::debug!("工具结果：{} 字节", result.len());
                         
                         // 将结果添加到上下文
                         context.add_tool_result(xflow_agent::ToolResult {
@@ -623,14 +668,14 @@ impl Session {
                     iteration += 1;
                 }
                 Err(e) => {
-                    warn!("Agent 执行失败: {}", e);
+                    warn!("Agent 执行失败：{}", e);
                     let _ = task.fail(&e.to_string());
-                    return format!("分析失败: {}", e);
+                    return format!("分析失败：{}", e);
                 }
             }
         }
         
-        debug!("任务 {} 状态: {:?}", task.id, task.status);
+        debug!("任务 {} 状态：{:?}", task.id, task.status);
         "分析完成".to_string()
     }
 }

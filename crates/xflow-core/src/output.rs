@@ -114,14 +114,20 @@ pub fn console_callback() -> OutputCallback {
             }
             
             OutputMessage::Content(text) => {
-                // 第一次输出时打印图标
+                // 跳过纯空白内容（用于控制格式的换行）
+                if text.is_empty() || text.trim().is_empty() {
+                    print!("{}", text);
+                    return;
+                }
+                
+                // 第一次输出非空白内容时打印图标
                 if !s.has_printed_content_icon {
                     // 如果之前在思考模式，关闭样式
                     if s.in_thinking_mode {
                         if s.thinking_ends_with_newline {
                             // 光标在新行，样式已关闭（换行时已关闭）
-                            // 思考内容的换行本身就是空行，不需要额外空行
                             print!("\x1b[0m"); // 确保样式关闭
+                            println!(); // 添加空行分隔
                         } else {
                             // 光标在内容末尾，样式已开启
                             println!("\x1b[0m"); // 关闭样式并换行（这行就是空行）
@@ -129,7 +135,8 @@ pub fn console_callback() -> OutputCallback {
                         s.in_thinking_mode = false;
                         s.has_started_thinking_content = false;
                     } else {
-                        println!(); // 如果没有思考模式，输出空行
+                        // 没有思考模式，直接输出空行和图标
+                        println!();
                     }
                     // 紫色✦图标
                     print!("\x1b[35m✦\x1b[0m ");

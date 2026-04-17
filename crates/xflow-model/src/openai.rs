@@ -23,7 +23,9 @@ impl OpenAIProvider {
     /// 创建新的 OpenAI 兼容提供者
     pub fn new(base_url: String, api_key: Option<String>, model: String, provider_name: String) -> Self {
         let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
+            .timeout(std::time::Duration::from_secs(300))
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .pool_max_idle_per_host(10)
             .build()
             .unwrap_or_else(|_| Client::new());
 
@@ -143,7 +145,14 @@ impl ModelProvider for OpenAIProvider {
             let response = match build_request_with_auth(builder, &api_key).send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    yield Err(Error::Http(e));
+                    // 提供更详细的超时错误信息
+                    if e.is_timeout() {
+                        debug!("{} API 请求超时，请检查：\n- 网络连接是否正常\n- API 服务器是否运行\n- 请求上下文是否过大\n- 模型是否正在加载", provider_name);
+                        yield Err(Error::Http(e));
+                    } else {
+                        debug!("{} API 请求失败：{}", provider_name, e);
+                        yield Err(Error::Http(e));
+                    }
                     return;
                 }
             };

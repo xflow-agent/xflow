@@ -9,10 +9,15 @@ use std::sync::Arc;
 use tracing::info;
 use xflow_model::{Message, ModelProvider, ToolDefinition};
 
+/// 输出回调类型
+type OutputCallback = Box<dyn Fn(String) + Send + Sync>;
+
 /// Reviewer Agent - 代码审查器
 pub struct ReviewerAgent {
     /// 可用工具定义
     tool_definitions: Vec<ToolDefinition>,
+    /// 输出回调（可选）
+    output_callback: Option<OutputCallback>,
 }
 
 impl ReviewerAgent {
@@ -20,7 +25,21 @@ impl ReviewerAgent {
     pub fn new() -> Self {
         Self {
             tool_definitions: Self::build_tool_definitions(),
+            output_callback: None,
         }
+    }
+    
+    /// 创建带输出回调的 Reviewer Agent
+    pub fn with_output(output_callback: OutputCallback) -> Self {
+        Self {
+            tool_definitions: Self::build_tool_definitions(),
+            output_callback: Some(output_callback),
+        }
+    }
+    
+    /// 设置输出回调
+    pub fn set_output_callback(&mut self, output_callback: OutputCallback) {
+        self.output_callback = Some(output_callback);
     }
 
     /// 构建工具定义
@@ -148,20 +167,20 @@ impl Agent for ReviewerAgent {
 ## 输出格式
 
 ```
-审查结果摘要: [总体评价]
+审查结果摘要：[总体评价]
 
 发现的问题:
-1. [问题描述] (严重程度: 高/中/低)
-   位置: [文件:行号]
-   建议: [修复建议]
+1. [问题描述] (严重程度：高/中/低)
+   位置：[文件:行号]
+   建议：[修复建议]
 
 优点:
-- [优点1]
-- [优点2]
+- [优点 1]
+- [优点 2]
 
 改进建议:
-1. [建议1]
-2. [建议2]
+1. [建议 1]
+2. [建议 2]
 ```
 
 请开始审查任务。"#
@@ -174,7 +193,7 @@ impl Agent for ReviewerAgent {
         context: &AgentContext,
         provider: Arc<dyn ModelProvider>,
     ) -> Result<AgentResponse> {
-        info!("Reviewer 开始审查: {}", task.description);
+        info!("Reviewer 开始审查：{}", task.description);
         
         // 构建消息
         let system_prompt = self.system_prompt();
@@ -237,7 +256,10 @@ impl Agent for ReviewerAgent {
             match chunk {
                 Ok(chunk) => {
                     if !chunk.content.is_empty() {
-                        print!("{}", chunk.content);
+                        // 修复：使用输出回调而不是 print!
+                        if let Some(ref callback) = self.output_callback {
+                            callback(chunk.content.clone());
+                        }
                         full_response.push_str(&chunk.content);
                     }
                     
@@ -249,12 +271,15 @@ impl Agent for ReviewerAgent {
                     }
                     
                     if chunk.done {
-                        println!();
+                        // 修复：使用输出回调而不是 println!
+                        if let Some(ref callback) = self.output_callback {
+                            callback("\n".to_string());
+                        }
                         break;
                     }
                 }
                 Err(e) => {
-                    return Err(anyhow::anyhow!("模型调用失败: {}", e));
+                    return Err(anyhow::anyhow!("模型调用失败：{}", e));
                 }
             }
         }
