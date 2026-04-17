@@ -369,9 +369,9 @@ impl Interaction for CliInteraction {
                 _ => "⚠️ 需要注意",
             };
             if let Some(ref reason) = req.danger_reason {
-                println!("  \x1b[33m⚠️  {} - {}\x1b[0m", level_display, reason);
+                println!("    \x1b[33m⚠️  {} - {}\x1b[0m", level_display, reason);
             } else {
-                println!("  \x1b[33m⚠️  {}\x1b[0m", level_display);
+                println!("    \x1b[33m⚠️  {}\x1b[0m", level_display);
             }
         }
         
@@ -390,21 +390,26 @@ impl Interaction for CliInteraction {
             "是否执行此操作?"
         };
         
+        // 使用 RenderConfig 设置提示符缩进（4 个空格）
+        let render_config = inquire::ui::RenderConfig::default()
+            .with_prompt_prefix(inquire::ui::Styled::new("    "));
+        
         match inquire::Confirm::new(confirm_msg)
             .with_default(true)  // 默认 Yes
+            .with_render_config(render_config)
             .prompt()
         {
             Ok(true) => {
-                println!("  \x1b[32m✓ 执行操作...\x1b[0m");
+                println!("    \x1b[32m✓ 执行操作...\x1b[0m");
                 ConfirmationResult::approved()
             }
             Ok(false) => {
-                println!("  \x1b[33m✗ 已取消\x1b[0m");
+                println!("    \x1b[33m✗ 已取消\x1b[0m");
                 ConfirmationResult::cancelled()
             }
             Err(e) => {
                 tracing::warn!("确认对话框错误: {}", e);
-                println!("  \x1b[31m✗ 确认失败，已取消\x1b[0m");
+                println!("    \x1b[31m✗ 确认失败，已取消\x1b[0m");
                 ConfirmationResult::rejected(e.to_string())
             }
         }
@@ -439,11 +444,11 @@ impl Interaction for CliInteraction {
             .prompt()
         {
             Ok(true) => {
-                println!("  \x1b[32m✓ 重新尝试...\x1b[0m");
+                println!("    \x1b[32m✓ 重新尝试...\x1b[0m");
                 true
             }
             Ok(false) => {
-                println!("  \x1b[33m✗ 已取消\x1b[0m");
+                println!("    \x1b[33m✗ 已取消\x1b[0m");
                 false
             }
             Err(e) => {

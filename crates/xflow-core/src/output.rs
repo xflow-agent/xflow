@@ -2,7 +2,7 @@
 //!
 //! 用于将 Session 的输出发送到不同目标（控制台、WebSocket 等）
 
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
 
 /// 消息类型
 #[derive(Debug, Clone)]
@@ -14,15 +14,15 @@ pub enum OutputMessage {
     /// 文本内容（流式）
     Content(String),
     /// 工具调用开始
-    ToolCall { 
-        name: String, 
+    ToolCall {
+        name: String,
         args: String,
         /// 格式化的参数显示
         params_display: String,
     },
     /// 工具结果
-    ToolResult { 
-        name: String, 
+    ToolResult {
+        name: String,
         result: String,
         result_size: usize,
         success: bool,
@@ -70,10 +70,10 @@ const INDENT: &str = "  ";
 /// 创建控制台回调（维护自己的显示状态）
 pub fn console_callback() -> OutputCallback {
     let state = Arc::new(Mutex::new(CliDisplayState::new()));
-    
+
     Box::new(move |msg| {
         let mut s = state.lock().unwrap();
-        
+
         match msg {
             OutputMessage::Thinking => {
                 // 重置所有状态（新的对话轮次开始）
@@ -82,17 +82,18 @@ pub fn console_callback() -> OutputCallback {
                 s.in_thinking_mode = false;
                 s.in_tool_mode = false;
                 s.thinking_ends_with_newline = false;
-                
+
                 // 思考中状态：蓝色✻图标 + 灰色斜体"思考中..."
                 println!();
                 print!("\x1b[34m✻\x1b[0m \x1b[90m\x1b[3m思考中...\x1b[0m");
             }
-            
+
             OutputMessage::ThinkingContent(text) => {
                 // 第一次输出思考内容时，换行并开始灰色斜体样式
                 if !s.has_started_thinking_content {
-                    println!();  // 换行，与"思考中..."分开
-                    print!("  \x1b[90m\x1b[3m");  // 缩进 + 灰色斜体
+                    println!(); // 换行，与"思考中..."分开
+                    println!(); // 添加空行分隔
+                    print!("  \x1b[90m\x1b[3m"); // 缩进 + 灰色斜体
                     s.has_started_thinking_content = true;
                     s.in_thinking_mode = true;
                 }
@@ -100,7 +101,7 @@ pub fn console_callback() -> OutputCallback {
                 for ch in text.chars() {
                     if ch == '\n' {
                         println!("\x1b[0m"); // 关闭样式并换行
-                        // 不立即开启样式，等到下一个非换行字符时开启
+                                             // 不立即开启样式，等到下一个非换行字符时开启
                         s.thinking_ends_with_newline = true;
                     } else {
                         // 如果之前是换行，现在要输出内容，开启样式
@@ -112,14 +113,14 @@ pub fn console_callback() -> OutputCallback {
                     }
                 }
             }
-            
+
             OutputMessage::Content(text) => {
                 // 跳过纯空白内容（用于控制格式的换行）
                 if text.is_empty() || text.trim().is_empty() {
                     print!("{}", text);
                     return;
                 }
-                
+
                 // 第一次输出非空白内容时打印图标
                 if !s.has_printed_content_icon {
                     // 如果之前在思考模式，关闭样式
@@ -135,7 +136,9 @@ pub fn console_callback() -> OutputCallback {
                         s.in_thinking_mode = false;
                         s.has_started_thinking_content = false;
                     } else {
-                        // 没有思考模式，直接输出空行和图标
+                        // 没有思考模式（只有"思考中..."但没有思考内容）
+                        // 先换行（与"思考中..."分开），再加一个空行
+                        println!();
                         println!();
                     }
                     // 紫色✦图标
@@ -144,15 +147,19 @@ pub fn console_callback() -> OutputCallback {
                 }
                 print!("{}", text);
             }
-            
-            OutputMessage::ToolCall { name, args: _, params_display } => {
+
+            OutputMessage::ToolCall {
+                name,
+                args: _,
+                params_display,
+            } => {
                 // 第一次工具调用时，关闭思考模式样式
                 if !s.in_tool_mode {
                     if s.in_thinking_mode {
                         if s.thinking_ends_with_newline {
                             // 光标在新行，样式已关闭（换行时已关闭）
-                            // 思考内容的换行本身就是空行，不需要额外空行
                             print!("\x1b[0m"); // 确保样式关闭
+                            println!(); // 添加空行分隔
                         } else {
                             // 光标在内容末尾，样式已开启
                             println!("\x1b[0m"); // 关闭样式并换行（这行就是空行）
@@ -164,56 +171,80 @@ pub fn console_callback() -> OutputCallback {
                     }
                     s.in_tool_mode = true;
                 }
-                
+
                 // 工具调用：黄色🛠图标 + 白色工具名 + 灰色参数，带缩进
                 if params_display.is_empty() {
                     println!("  \x1b[33m🛠\x1b[0m \x1b[97m{}\x1b[0m", name);
                 } else {
-                    println!("  \x1b[33m🛠\x1b[0m \x1b[97m{}\x1b[0m \x1b[90m{}\x1b[0m", name, params_display);
+                    println!(
+                        "  \x1b[33m🛠\x1b[0m \x1b[97m{}\x1b[0m \x1b[90m{}\x1b[0m",
+                        name, params_display
+                    );
                 }
             }
-            
-            OutputMessage::ToolResult { name: _, result, result_size, success } => {
-                // 先显示结果内容（保持缩进）
+
+            OutputMessage::ToolResult {
+                name: _,
+                result,
+                result_size,
+                success,
+            } => {
+                // 先显示结果内容（增加缩进以对齐工具名）
+
                 if !result.is_empty() {
                     // 截断显示，避免输出太长
+
                     let display_result = if result.chars().count() > 500 {
                         format!("{}...", result.chars().take(500).collect::<String>())
                     } else {
                         result.clone()
                     };
-                    // 按行输出，每行保持缩进
+
+                    // 按行输出，每行保持缩进（4 个空格）
+
                     for line in display_result.lines() {
-                        println!("  \x1b[90m{}\x1b[0m", line);
+                        println!("    \x1b[90m{}\x1b[0m", line);
                     }
                 }
-                // 显示成功/失败状态
+
+                // 显示成功/失败状态（同样增加缩进）
+
                 let size_str = if result_size > 1024 {
                     format!("{:.1}KB", result_size as f64 / 1024.0)
                 } else {
                     format!("{}B", result_size)
                 };
+
                 if success {
-                    println!("  \x1b[32m✓\x1b[0m \x1b[97m调用成功\x1b[90m ({})\x1b[0m", size_str);
+                    println!(
+                        "    \x1b[32m✓\x1b[0m \x1b[97m 调用成功\x1b[90m ({})\x1b[0m",
+                        size_str
+                    );
                 } else {
-                    println!("  \x1b[31m✗\x1b[0m \x1b[97m调用失败\x1b[90m ({})\x1b[0m", size_str);
+                    println!(
+                        "    \x1b[31m✗\x1b[0m \x1b[97m 调用失败\x1b[90m ({})\x1b[0m",
+                        size_str
+                    );
                 }
             }
-            
+
             OutputMessage::LoopProgress { current: _, max: _ } => {
                 // 不显示循环进度
             }
-            
-            OutputMessage::Done { tools_called: _, loops: _ } => {
+
+            OutputMessage::Done {
+                tools_called: _,
+                loops: _,
+            } => {
                 println!();
                 println!();
             }
-            
+
             OutputMessage::Error(text) => {
                 println!("\x1b[90m{}\x1b[31m✗\x1b[90m {}\x1b[0m", INDENT, text);
             }
         }
-        
+
         std::io::Write::flush(&mut std::io::stdout()).ok();
     })
 }
