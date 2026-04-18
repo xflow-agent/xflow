@@ -71,7 +71,7 @@ impl Repl {
         let mut session = Session::new(provider, workdir.to_path_buf(), ui_adapter);
 
         // 打印欢迎信息（显示完整工作目录和模型）
-        print_welcome(&workdir, model);
+        print_welcome(workdir, model);
 
         // 初始化项目上下文（静默初始化）
         if let Err(e) = session.init_project_context() {
