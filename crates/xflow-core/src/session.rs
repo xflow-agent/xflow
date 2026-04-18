@@ -193,6 +193,12 @@ impl Session {
         let mut total_tools_called = 0;
 
         loop {
+            // 检查中断
+            if self.ui.is_interrupted() {
+                self.handle_interrupt().await;
+                return Ok(());
+            }
+
             if loop_count >= MAX_TOOL_LOOPS {
                 warn!("达到最大工具调用循环次数：{}", MAX_TOOL_LOOPS);
                 self.ui
@@ -256,6 +262,14 @@ impl Session {
             let mut stream = stream;
 
             while let Some(chunk) = stream.next().await {
+                // 检查中断（在处理每个 chunk 前检查）
+                if self.ui.is_interrupted() {
+                    animation_running.store(false, Ordering::Relaxed);
+                    let _ = animation_task.await;
+                    self.handle_interrupt().await;
+                    return Ok(());
+                }
+
                 match chunk {
                     Ok(StreamChunk {
                         content,
@@ -368,6 +382,14 @@ impl Session {
 
                 // 执行每个工具调用
                 for (i, tool_call) in tool_calls.iter().enumerate() {
+                    // 检查中断
+                    if self.ui.is_interrupted() {
+                        animation_running.store(false, Ordering::Relaxed);
+                        let _ = animation_task.await;
+                        self.handle_interrupt().await;
+                        return Ok(());
+                    }
+
                     let tool_name = &tool_call.function.name;
                     let tool_args = &tool_call.function.arguments;
 
@@ -544,6 +566,30 @@ impl Session {
         debug!("UI 适配器已更新");
     }
 
+    /// 获取 UI 适配器引用（用于注册中断等外部操作）
+    pub fn ui_adapter(&self) -> &Arc<dyn UiAdapter> {
+        &self.ui
+    }
+
+    /// 处理中断：输出提示、清除中断标志
+    async fn handle_interrupt(&self) {
+        let info = self.ui.get_interrupt_info();
+        let reason = info
+            .as_ref()
+            .map(|i| i.reason.as_str())
+            .unwrap_or("用户中断");
+
+        warn!("执行被中断：{}", reason);
+
+        self.ui
+            .output(OutputEvent::Error {
+                message: format!("执行已中断：{}", reason),
+            })
+            .await;
+
+        self.ui.clear_interrupt();
+    }
+
     /// 裁剪消息历史，保留最近的 MAX_MESSAGE_HISTORY 条非系统消息
     fn trim_message_history(&mut self) {
         // 保留系统消息（第一条如果是系统消息）
@@ -635,6 +681,13 @@ impl Session {
         let mut iteration = 0;
 
         loop {
+            // 检查中断
+            if self.ui.is_interrupted() {
+                let _ = task.fail("用户中断");
+                self.handle_interrupt().await;
+                return "分析被中断".to_string();
+            }
+
             if iteration >= max_iterations {
                 warn!("Agent 达到最大迭代次数");
                 let _ = task.fail("达到最大迭代次数");

@@ -6,7 +6,7 @@ use rustyline::history::DefaultHistory;
 use rustyline::{DefaultEditor, Editor};
 use std::path::Path;
 use std::sync::Arc;
-use xflow_core::{CliAdapter, Session};
+use xflow_core::{CliAdapter, InterruptInfo, Session};
 use xflow_model::ModelProvider;
 
 /// REPL 交互界面
@@ -49,7 +49,17 @@ impl Repl {
 
     /// 运行 REPL 主循环
     pub async fn run(&mut self) -> Result<()> {
+        // 注册 Ctrl+C handler：设置中断标志而非终止进程
+        let ui = self.session.ui_adapter().clone();
+        ctrlc::set_handler(move || {
+            ui.interrupt(InterruptInfo::user("Ctrl+C"));
+        })
+        .context("无法注册 Ctrl+C 处理器")?;
+
         loop {
+            // 每次循环开始前清除之前的中断标志
+            self.session.ui_adapter().clear_interrupt();
+
             // 读取用户输入
             let readline = self.editor.readline("\x1b[1;36mxflow>\x1b[0m ");
 
@@ -72,6 +82,9 @@ impl Repl {
                     self.session.process(line).await?;
                 }
                 Err(ReadlineError::Interrupted) => {
+                    // 在输入等待时按 Ctrl+C，rustyline 会捕获
+                    // 这里不需要额外处理，因为 session.process 期间的中断
+                    // 由 ctrlc handler 处理
                     println!("\n使用 /exit 或 Ctrl-D 退出");
                     continue;
                 }
