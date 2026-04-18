@@ -36,7 +36,6 @@ impl Tool for ListDirectoryTool {
             name: "list_directory",
             description: "列出目录内容。参数: path - 目录路径，默认为当前目录",
             category: ToolCategory::File,
-            requires_confirmation: false,
             danger_level: 0,
             display: ToolDisplayConfig {
                 primary_param: "path",

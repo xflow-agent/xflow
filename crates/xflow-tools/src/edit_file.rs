@@ -44,7 +44,6 @@ impl Tool for EditFileTool {
             name: "edit_file",
             description: "编辑文件内容。参数: path - 文件路径, old_string - 要替换的旧内容（必须精确匹配）, new_string - 新内容。用于精确修改文件的特定部分。",
             category: ToolCategory::File,
-            requires_confirmation: true,
             danger_level: 1,
             display: ToolDisplayConfig {
                 primary_param: "path",

@@ -1,6 +1,8 @@
 //! run_shell 工具实现
 
-use super::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
+use super::tool::{
+    ResultDisplayType, Tool, ToolCategory, ToolConfirmationRequest, ToolDisplayConfig, ToolMetadata,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
@@ -235,7 +237,6 @@ impl Tool for RunShellTool {
             name: "run_shell",
             description: "执行 Shell 命令。参数: command - 要执行的命令, workdir - 可选的工作目录, timeout - 超时秒数(默认30)。返回命令的标准输出和标准错误。",
             category: ToolCategory::Shell,
-            requires_confirmation: true,
             danger_level: 2,
             display: ToolDisplayConfig {
                 primary_param: "command",
@@ -266,6 +267,33 @@ impl Tool for RunShellTool {
             },
             "required": ["command"]
         })
+    }
+
+    fn build_confirmation(&self, args: &serde_json::Value) -> Option<ToolConfirmationRequest> {
+        let command = args.get("command")?.as_str()?;
+        let workdir = args.get("workdir").and_then(|w| w.as_str());
+
+        // 使用已有的危险分析逻辑
+        let analysis = analyze_command(command);
+
+        let mut message = format!("命令: {}", command);
+
+        if let Some(wd) = workdir {
+            message.push_str(&format!("\n工作目录: {}", wd));
+        }
+
+        if analysis.is_dangerous {
+            message.push_str(&format!("\n⚠️ 警告: {}", analysis.reason));
+        }
+
+        let mut req = ToolConfirmationRequest::new(message);
+
+        // 根据危险等级设置
+        if analysis.level > 0 {
+            req = req.with_danger(analysis.level, analysis.reason);
+        }
+
+        Some(req)
     }
 
     async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {

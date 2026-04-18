@@ -1,4 +1,4 @@
-//! 会话管理 V2 - 使用新的 UiAdapter
+//! 会话管理 - 使用 UiAdapter
 
 use anyhow::Result;
 use std::path::PathBuf;
@@ -33,50 +33,20 @@ fn format_tool_params(tool: &dyn xflow_tools::Tool, args: &serde_json::Value) ->
     tool.format_params(args)
 }
 
-/// 使用工具的元数据来构建确认请求
-fn build_confirmation_request(
-    tool: &dyn xflow_tools::Tool,
-    args: &serde_json::Value,
+/// 将工具的确认请求转换为事件的确认请求
+fn convert_confirmation_request(
+    tool_name: &str,
+    req: xflow_tools::ToolConfirmationRequest,
 ) -> ConfirmationRequest {
-    let meta = tool.metadata();
-    let tool_name = meta.name;
-
-    // 构建消息内容
-    let message = match tool_name {
-        "write_file" => {
-            if let Some(path) = args.get("path") {
-                if let Some(content) = args.get("content") {
-                    let content_str = content.as_str().unwrap_or("");
-                    let preview = match content_str.char_indices().nth(100) {
-                        Some((idx, _)) => format!("{}...", &content_str[..idx]),
-                        None => content_str.to_string(),
-                    };
-                    format!("路径：{}\n内容预览：{}", path, preview)
-                } else {
-                    format!("路径：{}", path)
-                }
-            } else {
-                args.to_string()
-            }
-        }
-        "run_shell" => {
-            if let Some(cmd) = args.get("command").and_then(|c| c.as_str()) {
-                format!("命令：{}", cmd)
-            } else {
-                args.to_string()
-            }
-        }
-        _ => args.to_string(),
-    };
-
-    let mut req = ConfirmationRequest::new(tool_name, message);
-    if meta.danger_level > 0 {
-        req = req.with_danger(
-            meta.danger_level,
-            format!("危险等级: {}", meta.danger_level),
+    let mut event_req = ConfirmationRequest::new(tool_name, req.message);
+    if req.danger_level > 0 {
+        event_req = event_req.with_danger(
+            req.danger_level,
+            req.danger_reason
+                .unwrap_or_else(|| format!("危险等级: {}", req.danger_level)),
         );
     }
-    req
+    event_req
 }
 
 /// 系统提示词（基础部分）
@@ -424,15 +394,10 @@ impl Session {
 
                     debug!("工具参数：{}", tool_args);
 
-                    // 检查是否需要确认（使用元数据）
-                    let requires_confirmation = tool
-                        .as_ref()
-                        .map(|t| t.metadata().requires_confirmation)
-                        .unwrap_or(false);
-
-                    let confirmed = if requires_confirmation {
-                        if let Some(ref t) = tool {
-                            let req = build_confirmation_request(t.as_ref(), tool_args);
+                    // 检查是否需要确认（使用工具的 build_confirmation 方法）
+                    let confirmed = if let Some(ref t) = tool {
+                        if let Some(tool_req) = t.build_confirmation(tool_args) {
+                            let req = convert_confirmation_request(tool_name, tool_req);
                             self.ui.confirm(req).await
                         } else {
                             true

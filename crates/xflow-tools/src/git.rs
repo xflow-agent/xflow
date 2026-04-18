@@ -128,7 +128,6 @@ impl Tool for GitStatusTool {
             name: "git_status",
             description: "查看 Git 仓库状态，显示工作目录和暂存区的文件状态。返回当前分支、已修改文件、未跟踪文件等信息。",
             category: ToolCategory::Git,
-            requires_confirmation: false,
             danger_level: 0,
             display: ToolDisplayConfig {
                 primary_param: "",
@@ -205,7 +204,6 @@ impl Tool for GitDiffTool {
             name: "git_diff",
             description: "查看 Git 差异，显示文件的具体更改内容。可以查看未暂存的更改、暂存区的更改，或两个提交之间的差异。",
             category: ToolCategory::Git,
-            requires_confirmation: false,
             danger_level: 0,
             display: ToolDisplayConfig {
                 primary_param: "file",
@@ -302,7 +300,6 @@ impl Tool for GitLogTool {
             description:
                 "查看 Git 提交历史日志。显示最近的提交记录，包括提交哈希、作者、日期和提交消息。",
             category: ToolCategory::Git,
-            requires_confirmation: false,
             danger_level: 0,
             display: ToolDisplayConfig {
                 primary_param: "file",
@@ -403,7 +400,6 @@ impl Tool for GitCommitTool {
             description:
                 "创建 Git 提交。可以选择先添加所有更改的文件，然后创建提交。此操作需要用户确认。",
             category: ToolCategory::Git,
-            requires_confirmation: true,
             danger_level: 1,
             display: ToolDisplayConfig {
                 primary_param: "message",
@@ -496,7 +492,6 @@ impl Tool for GitAddTool {
             name: "git_add",
             description: "将文件添加到 Git 暂存区。可以添加指定文件或所有更改的文件。",
             category: ToolCategory::Git,
-            requires_confirmation: false,
             danger_level: 0,
             display: ToolDisplayConfig {
                 primary_param: "files",
@@ -586,7 +581,6 @@ impl Tool for GitBranchTool {
             name: "git_branch",
             description: "管理 Git 分支。可以列出、创建或删除分支。",
             category: ToolCategory::Git,
-            requires_confirmation: true, // 删除分支需要确认
             danger_level: 1,
             display: ToolDisplayConfig {
                 primary_param: "action",

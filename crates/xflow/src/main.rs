@@ -19,7 +19,6 @@ use xflow_model::{ModelProvider, OpenAIProvider};
 struct Args {
     /// API 基础 URL
     /// - vLLM: http://localhost:8000/v1
-    /// - OpenAI: https://api.openai.com/v1
     /// - Ollama: http://localhost:11434/v1
     #[arg(short, long, default_value = "http://localhost:11434/v1")]
     base_url: String,
@@ -48,10 +47,16 @@ async fn main() -> Result<()> {
     // 初始化日志
     init_logging(args.debug);
 
+    // 获取完整的工作目录路径
+    let full_workdir = args.workdir.canonicalize().unwrap_or_else(|e| {
+        tracing::warn!("无法获取绝对路径: {}，使用原始路径", e);
+        args.workdir.to_path_buf()
+    });
+
     info!("启动 xflow...");
     info!("Base URL: {}", args.base_url);
     info!("模型：{}", args.model);
-    info!("目录：{:?}", args.workdir);
+    info!("目录：{:?}", full_workdir);
 
     // 创建模型提供者 (OpenAI 兼容模式)
     let provider: Arc<dyn ModelProvider> = Arc::new(OpenAIProvider::new(
@@ -62,7 +67,7 @@ async fn main() -> Result<()> {
     ));
 
     // 启动 REPL
-    let mut repl = Repl::new(provider, &args.model, &args.workdir)?;
+    let mut repl = Repl::new(provider, &args.model, &full_workdir)?;
     repl.run().await?;
 
     Ok(())

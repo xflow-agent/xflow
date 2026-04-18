@@ -41,7 +41,6 @@ impl Tool for ReviewerAgentTool {
             name: "reviewer_agent",
             description: "【重要】项目分析工具。当用户要求'分析项目'、'分析功能'、'分析架构'、'了解项目结构'等时，**必须**调用此工具，不要直接使用 read_file。此工具会启动 ReviewerAgent 执行完整的多步骤分析流程（自动读取配置、分析模块、生成报告）。参数: task - 分析任务描述。",
             category: ToolCategory::Agent,
-            requires_confirmation: false,
             danger_level: 0,
             display: ToolDisplayConfig {
                 primary_param: "task",

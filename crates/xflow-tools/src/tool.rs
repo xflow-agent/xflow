@@ -84,9 +84,7 @@ pub struct ToolMetadata {
     pub description: &'static str,
     /// 工具类别
     pub category: ToolCategory,
-    /// 是否需要用户确认
-    pub requires_confirmation: bool,
-    /// 危险等级 (0-3)
+    /// 危险等级 (0-3)，用于提示和默认确认逻辑
     pub danger_level: u8,
     /// 展示配置
     pub display: ToolDisplayConfig,
@@ -118,6 +116,35 @@ impl ToolCall {
     pub fn parse_args<T: for<'de> Deserialize<'de>>(&self) -> anyhow::Result<T> {
         let args: T = serde_json::from_str(&self.function.arguments)?;
         Ok(args)
+    }
+}
+
+/// 确认请求
+#[derive(Debug, Clone)]
+pub struct ToolConfirmationRequest {
+    /// 操作描述
+    pub message: String,
+    /// 危险等级 (0-3)
+    pub danger_level: u8,
+    /// 危险原因
+    pub danger_reason: Option<String>,
+}
+
+impl ToolConfirmationRequest {
+    /// 创建新的确认请求
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            danger_level: 0,
+            danger_reason: None,
+        }
+    }
+
+    /// 设置危险等级
+    pub fn with_danger(mut self, level: u8, reason: impl Into<String>) -> Self {
+        self.danger_level = level;
+        self.danger_reason = Some(reason.into());
+        self
     }
 }
 
@@ -204,6 +231,32 @@ pub trait Tool: Send + Sync {
                 }
             }
         }
+    }
+
+    /// 构建确认请求
+    ///
+    /// 默认实现：危险等级 > 0 时需要确认
+    /// 工具可以覆盖此方法以：
+    /// 1. 自定义确认信息内容
+    /// 2. 基于参数动态决定是否确认（返回 Some 或 None）
+    /// 3. 完全不需要确认（返回 None）
+    fn build_confirmation(&self, args: &Value) -> Option<ToolConfirmationRequest> {
+        let meta = self.metadata();
+
+        // 危险等级为 0 时默认不需要确认
+        if meta.danger_level == 0 {
+            return None;
+        }
+
+        // 默认使用参数 JSON 作为消息
+        let message = format!("执行 {} 工具\n参数: {}", meta.name, args);
+
+        let req = ToolConfirmationRequest::new(message).with_danger(
+            meta.danger_level,
+            format!("危险等级: {}", meta.danger_level),
+        );
+
+        Some(req)
     }
 }
 

@@ -1,6 +1,8 @@
 //! write_file 工具实现
 
-use super::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
+use super::tool::{
+    ResultDisplayType, Tool, ToolCategory, ToolConfirmationRequest, ToolDisplayConfig, ToolMetadata,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -72,7 +74,6 @@ impl Tool for WriteFileTool {
             description:
                 "写入文件内容。参数: path - 文件路径, content - 要写入的内容。会覆盖已存在的文件。",
             category: ToolCategory::File,
-            requires_confirmation: true,
             danger_level: 1,
             display: ToolDisplayConfig {
                 primary_param: "path",
@@ -98,6 +99,48 @@ impl Tool for WriteFileTool {
             },
             "required": ["path", "content"]
         })
+    }
+
+    fn build_confirmation(&self, args: &serde_json::Value) -> Option<ToolConfirmationRequest> {
+        let path = args.get("path")?.as_str()?;
+        let content = args.get("content")?.as_str()?;
+
+        // 检查文件是否已存在
+        let path_buf = PathBuf::from(path);
+        let exists = path_buf.exists();
+
+        // 生成内容预览（前 200 字符）
+        let preview = if content.len() > 200 {
+            format!("{}...", &content[..200])
+        } else {
+            content.to_string()
+        };
+
+        // 计算行数
+        let lines = content.lines().count();
+
+        let message = if exists {
+            format!(
+                "路径: {}\n操作: 覆盖已有文件\n行数: {}\n内容预览:\n{}",
+                path, lines, preview
+            )
+        } else {
+            format!(
+                "路径: {}\n操作: 创建新文件\n行数: {}\n内容预览:\n{}",
+                path, lines, preview
+            )
+        };
+
+        let mut req = ToolConfirmationRequest::new(message);
+
+        // 覆盖文件危险等级更高
+        if exists {
+            req = req.with_danger(2, "将覆盖已有文件内容");
+        } else {
+            req = req.with_danger(1, "创建新文件");
+        }
+
+        Some(req)
     }
 
     async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {

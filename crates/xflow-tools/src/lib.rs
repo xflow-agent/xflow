@@ -20,9 +20,13 @@ pub use read_file::ReadFileTool;
 pub use run_shell::{analyze_command, DangerAnalysis, RunShellTool};
 pub use search_file::SearchFileTool;
 pub use tool::{
-    ResultDisplayType, Tool, ToolCall, ToolCategory, ToolDefinition, ToolDisplayConfig,
-    ToolMetadata,
+    ResultDisplayType, Tool, ToolCall, ToolCategory, ToolConfirmationRequest, ToolDefinition,
+    ToolDisplayConfig, ToolMetadata,
 };
+
+// 为了向后兼容，保留别名（已废弃）
+#[deprecated(note = "使用 Tool::build_confirmation 返回值判断，不再需要此字段")]
+pub use tool::ToolMetadata as _ToolMetadataDeprecated;
 pub use write_file::WriteFileTool;
 
 use std::collections::HashMap;

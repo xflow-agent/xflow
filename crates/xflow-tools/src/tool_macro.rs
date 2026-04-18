@@ -10,7 +10,6 @@
 ///     name: "read_file",
 ///     description: "读取文件内容",
 ///     category: File,
-///     confirm: false,
 ///     danger: 0,
 ///     params: [{"name": "path", "type": "string", "required": true}],
 ///     execute: |args| async move {
@@ -25,7 +24,6 @@ macro_rules! define_tool {
         name: $name:expr,
         description: $desc:expr,
         category: $cat:ident,
-        confirm: $confirm:expr,
         danger: $danger:expr,
         primary_param: $primary:expr,
         result_display: $display:ident,
@@ -33,17 +31,17 @@ macro_rules! define_tool {
         execute: $exec:expr
     ) => {
         use async_trait::async_trait;
-        
+
         pub struct ToolImpl;
-        
+
         impl ToolImpl {
             pub fn new() -> Self { Self }
         }
-        
+
         impl Default for ToolImpl {
             fn default() -> Self { Self::new() }
         }
-        
+
         #[async_trait]
         impl $crate::Tool for ToolImpl {
             fn metadata(&self) -> $crate::ToolMetadata {
@@ -51,7 +49,6 @@ macro_rules! define_tool {
                     name: $name,
                     description: $desc,
                     category: $crate::ToolCategory::$cat,
-                    requires_confirmation: $confirm,
                     danger_level: $danger,
                     display: $crate::ToolDisplayConfig {
                         primary_param: $primary,
@@ -61,11 +58,11 @@ macro_rules! define_tool {
                     },
                 }
             }
-            
+
             fn parameters_schema(&self) -> serde_json::Value {
                 $schema
             }
-            
+
             async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
                 $exec(args).await
             }

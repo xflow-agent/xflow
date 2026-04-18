@@ -42,7 +42,6 @@ impl Tool for SearchFileTool {
             name: "search_file",
             description: "在文件中搜索内容（使用 ripgrep）。参数: pattern - 搜索模式（支持正则），path - 搜索路径（可选，默认当前目录），ignore_case - 是否忽略大小写",
             category: ToolCategory::Search,
-            requires_confirmation: false,
             danger_level: 0,
             display: ToolDisplayConfig {
                 primary_param: "pattern",

@@ -36,13 +36,8 @@ impl Repl {
         // 初始化会话
         let mut session = Session::new(provider, workdir.to_path_buf(), ui_adapter);
 
-        // 获取完整的工作目录路径
-        let full_workdir = workdir
-            .canonicalize()
-            .unwrap_or_else(|_| workdir.to_path_buf());
-
         // 打印欢迎信息（显示完整工作目录和模型）
-        print_welcome(&full_workdir, model);
+        print_welcome(&workdir, model);
 
         // 初始化项目上下文（静默初始化）
         if let Err(e) = session.init_project_context() {
@@ -179,19 +174,6 @@ fn print_help() {
   /exit, /quit, /q 退出
   /clear           清空会话
   /model           显示当前模型
-
-高级工具:
-  AI 会自动判断并调用以下高级工具：
-  - analyze_project: 项目分析（"分析项目"、"分析功能"）
-  - implement_feature: 功能实现（"实现xxx功能"）
-
-使用方法:
-  直接输入问题或指令，AI 会自动选择合适的工具完成你的任务。
-  
-示例:
-  "分析一下这个项目的所有功能"
-  "实现一个用户登录功能"
-  "修复 src/main.rs 中的编译错误"
 "#
     );
 }

@@ -112,7 +112,6 @@ impl Tool for ReadFileTool {
             name: "read_file",
             description: "读取文件内容。参数: path - 要读取的文件路径（绝对路径或相对路径）",
             category: ToolCategory::File,
-            requires_confirmation: false,
             danger_level: 0,
             display: ToolDisplayConfig {
                 primary_param: "path",
