@@ -21,11 +21,11 @@ struct Args {
     /// - vLLM: http://localhost:8000/v1
     /// - OpenAI: https://api.openai.com/v1
     /// - Ollama: http://localhost:11434/v1
-    #[arg(short, long, default_value = "http://172.21.246.100:8000/v1")]
+    #[arg(short, long, default_value = "http://localhost:11434/v1")]
     base_url: String,
 
-    /// API Key (OpenAI/vLLM 可选)
-    #[arg(short = 'k', long, default_value = "sk-kmgyfhiuf2imftm9l2w0kdw3sgquqbab")]
+    /// API Key (OpenAI/vLLM 需要，Ollama 可省略)
+    #[arg(short = 'k', long, env = "XFLOW_API_KEY")]
     api_key: Option<String>,
 
     /// 模型名称
@@ -70,52 +70,57 @@ async fn main() -> Result<()> {
 
 /// 初始化日志系统
 fn init_logging(debug: bool) {
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
     use chrono::Local;
-    
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
     // 日志文件路径 - 使用日期命名：xflow-20260416.log
     let log_dir = dirs::data_dir()
         .map(|p| p.join("xflow/logs"))
         .unwrap_or_else(std::env::temp_dir);
     let _ = std::fs::create_dir_all(&log_dir);
-    
+
     // 获取当前日期，格式：20260416
     let date_str = Local::now().format("%Y%m%d").to_string();
     let log_file = log_dir.join(format!("xflow-{}.log", date_str));
-    
+
     // 自定义时间格式：2026-04-14 15:11:45.823
-    let time_format = tracing_subscriber::fmt::time::ChronoLocal::new(
-        "%Y-%m-%d %H:%M:%S%.3f".parse().unwrap()
-    );
-    
+    let time_format =
+        tracing_subscriber::fmt::time::ChronoLocal::new("%Y-%m-%d %H:%M:%S%.3f".parse().unwrap());
+
     // 创建文件日志层
     let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_file)
-            .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap()))
+        .with_writer(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_file)
+                .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap()),
+        )
         .with_ansi(false)
         .with_timer(time_format.clone());
-    
+
     if debug {
         // 调试模式：同时输出到文件和控制台
         let console_layer = tracing_subscriber::fmt::layer()
             .with_writer(std::io::stderr)
             .with_target(false)
             .with_timer(time_format);
-        
+
         tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug")))
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug")),
+            )
             .with(file_layer)
             .with(console_layer)
             .init();
     } else {
         // 正常模式：只输出到文件
         tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")))
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
             .with(file_layer)
             .init();
     }

@@ -2,11 +2,11 @@
 //!
 //! 提供 git_status, git_diff, git_log, git_commit 工具
 
-use crate::tool::Tool;
+use crate::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
 use async_trait::async_trait;
 use serde::Deserialize;
-use tokio::process::Command;
 use std::process::Stdio;
+use tokio::process::Command;
 
 /// git_status 参数
 #[derive(Debug, Deserialize)]
@@ -97,7 +97,9 @@ async fn run_git(args: &[&str], workdir: Option<&str>) -> anyhow::Result<String>
 
 /// 检查是否在 git 仓库中（异步版本）
 async fn is_git_repo(workdir: Option<&str>) -> bool {
-    run_git(&["rev-parse", "--is-inside-work-tree"], workdir).await.is_ok()
+    run_git(&["rev-parse", "--is-inside-work-tree"], workdir)
+        .await
+        .is_ok()
 }
 
 // ============================================================================
@@ -121,12 +123,20 @@ impl GitStatusTool {
 
 #[async_trait]
 impl Tool for GitStatusTool {
-    fn name(&self) -> &str {
-        "git_status"
-    }
-
-    fn description(&self) -> &str {
-        "查看 Git 仓库状态，显示工作目录和暂存区的文件状态。返回当前分支、已修改文件、未跟踪文件等信息。"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "git_status",
+            description: "查看 Git 仓库状态，显示工作目录和暂存区的文件状态。返回当前分支、已修改文件、未跟踪文件等信息。",
+            category: ToolCategory::Git,
+            requires_confirmation: false,
+            danger_level: 0,
+            display: ToolDisplayConfig {
+                primary_param: "",
+                result_display: ResultDisplayType::Full,
+                max_preview_lines: 20,
+                max_preview_chars: 1000,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -165,11 +175,7 @@ impl Tool for GitStatusTool {
         // 获取当前分支
         let branch = run_git(&["branch", "--show-current"], workdir).await?;
 
-        Ok(format!(
-            "当前分支: {}\n\n{}",
-            branch.trim(),
-            status.trim()
-        ))
+        Ok(format!("当前分支: {}\n\n{}", branch.trim(), status.trim()))
     }
 }
 
@@ -194,12 +200,20 @@ impl GitDiffTool {
 
 #[async_trait]
 impl Tool for GitDiffTool {
-    fn name(&self) -> &str {
-        "git_diff"
-    }
-
-    fn description(&self) -> &str {
-        "查看 Git 差异，显示文件的具体更改内容。可以查看未暂存的更改、暂存区的更改，或两个提交之间的差异。"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "git_diff",
+            description: "查看 Git 差异，显示文件的具体更改内容。可以查看未暂存的更改、暂存区的更改，或两个提交之间的差异。",
+            category: ToolCategory::Git,
+            requires_confirmation: false,
+            danger_level: 0,
+            display: ToolDisplayConfig {
+                primary_param: "file",
+                result_display: ResultDisplayType::Full,
+                max_preview_lines: 50,
+                max_preview_chars: 2000,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -282,12 +296,21 @@ impl GitLogTool {
 
 #[async_trait]
 impl Tool for GitLogTool {
-    fn name(&self) -> &str {
-        "git_log"
-    }
-
-    fn description(&self) -> &str {
-        "查看 Git 提交历史日志。显示最近的提交记录，包括提交哈希、作者、日期和提交消息。"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "git_log",
+            description:
+                "查看 Git 提交历史日志。显示最近的提交记录，包括提交哈希、作者、日期和提交消息。",
+            category: ToolCategory::Git,
+            requires_confirmation: false,
+            danger_level: 0,
+            display: ToolDisplayConfig {
+                primary_param: "file",
+                result_display: ResultDisplayType::LineCount,
+                max_preview_lines: 20,
+                max_preview_chars: 1000,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -356,7 +379,7 @@ impl Tool for GitLogTool {
 // ============================================================================
 
 /// Git 提交工具
-/// 
+///
 /// 注意：此工具需要用户确认后才能执行
 pub struct GitCommitTool;
 
@@ -374,12 +397,21 @@ impl GitCommitTool {
 
 #[async_trait]
 impl Tool for GitCommitTool {
-    fn name(&self) -> &str {
-        "git_commit"
-    }
-
-    fn description(&self) -> &str {
-        "创建 Git 提交。可以选择先添加所有更改的文件，然后创建提交。此操作需要用户确认。"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "git_commit",
+            description:
+                "创建 Git 提交。可以选择先添加所有更改的文件，然后创建提交。此操作需要用户确认。",
+            category: ToolCategory::Git,
+            requires_confirmation: true,
+            danger_level: 1,
+            display: ToolDisplayConfig {
+                primary_param: "message",
+                result_display: ResultDisplayType::Full,
+                max_preview_lines: 10,
+                max_preview_chars: 500,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -459,12 +491,20 @@ impl GitAddTool {
 
 #[async_trait]
 impl Tool for GitAddTool {
-    fn name(&self) -> &str {
-        "git_add"
-    }
-
-    fn description(&self) -> &str {
-        "将文件添加到 Git 暂存区。可以添加指定文件或所有更改的文件。"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "git_add",
+            description: "将文件添加到 Git 暂存区。可以添加指定文件或所有更改的文件。",
+            category: ToolCategory::Git,
+            requires_confirmation: false,
+            danger_level: 0,
+            display: ToolDisplayConfig {
+                primary_param: "files",
+                result_display: ResultDisplayType::StatusOnly,
+                max_preview_lines: 5,
+                max_preview_chars: 200,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -541,12 +581,20 @@ impl GitBranchTool {
 
 #[async_trait]
 impl Tool for GitBranchTool {
-    fn name(&self) -> &str {
-        "git_branch"
-    }
-
-    fn description(&self) -> &str {
-        "管理 Git 分支。可以列出、创建或删除分支。"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "git_branch",
+            description: "管理 Git 分支。可以列出、创建或删除分支。",
+            category: ToolCategory::Git,
+            requires_confirmation: true, // 删除分支需要确认
+            danger_level: 1,
+            display: ToolDisplayConfig {
+                primary_param: "action",
+                result_display: ResultDisplayType::Full,
+                max_preview_lines: 20,
+                max_preview_chars: 800,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -597,20 +645,20 @@ impl Tool for GitBranchTool {
                 Ok(format!("当前分支: {}", branch.trim()))
             }
             "create" => {
-                let name = params.name.ok_or_else(|| {
-                    anyhow::anyhow!("创建分支需要提供分支名称")
-                })?;
+                let name = params
+                    .name
+                    .ok_or_else(|| anyhow::anyhow!("创建分支需要提供分支名称"))?;
                 run_git(&["branch", &name], workdir).await?;
                 Ok(format!("已创建分支: {}", name))
             }
             "delete" => {
-                let name = params.name.ok_or_else(|| {
-                    anyhow::anyhow!("删除分支需要提供分支名称")
-                })?;
+                let name = params
+                    .name
+                    .ok_or_else(|| anyhow::anyhow!("删除分支需要提供分支名称"))?;
                 run_git(&["branch", "-d", &name], workdir).await?;
                 Ok(format!("已删除分支: {}", name))
             }
-            _ => Err(anyhow::anyhow!("未知操作: {}", params.action))
+            _ => Err(anyhow::anyhow!("未知操作: {}", params.action)),
         }
     }
 }

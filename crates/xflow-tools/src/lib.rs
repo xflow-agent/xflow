@@ -2,26 +2,28 @@
 //!
 //! 提供工具 trait 定义和内置工具实现
 
-mod tool;
-mod read_file;
-mod write_file;
-mod list_directory;
-mod search_file;
-mod run_shell;
-mod git;
 mod agent_tool;
+mod edit_file;
+mod git;
+mod list_directory;
+mod read_file;
+mod run_shell;
+mod search_file;
+mod tool;
+mod write_file;
 
-pub use tool::{Tool, ToolCall, ToolDefinition};
-pub use read_file::ReadFileTool;
-pub use write_file::WriteFileTool;
-pub use list_directory::ListDirectoryTool;
-pub use search_file::SearchFileTool;
-pub use run_shell::{RunShellTool, analyze_command, DangerAnalysis};
-pub use git::{
-    GitStatusTool, GitDiffTool, GitLogTool, GitCommitTool,
-    GitAddTool, GitBranchTool,
-};
 pub use agent_tool::ReviewerAgentTool;
+pub use edit_file::EditFileTool;
+pub use git::{GitAddTool, GitBranchTool, GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool};
+pub use list_directory::ListDirectoryTool;
+pub use read_file::ReadFileTool;
+pub use run_shell::{analyze_command, DangerAnalysis, RunShellTool};
+pub use search_file::SearchFileTool;
+pub use tool::{
+    ResultDisplayType, Tool, ToolCall, ToolCategory, ToolDefinition, ToolDisplayConfig,
+    ToolMetadata,
+};
+pub use write_file::WriteFileTool;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -65,16 +67,17 @@ impl Default for ToolRegistry {
 /// 创建默认工具注册表
 pub fn create_default_tools() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
-    
+
     // 文件工具
     registry.register(Arc::new(ReadFileTool::new()));
     registry.register(Arc::new(WriteFileTool::new()));
+    registry.register(Arc::new(EditFileTool::new())); // 新增 edit_file
     registry.register(Arc::new(ListDirectoryTool::new()));
     registry.register(Arc::new(SearchFileTool::new()));
-    
+
     // Shell 工具
     registry.register(Arc::new(RunShellTool::new()));
-    
+
     // Git 工具
     registry.register(Arc::new(GitStatusTool::new()));
     registry.register(Arc::new(GitDiffTool::new()));
@@ -82,8 +85,8 @@ pub fn create_default_tools() -> ToolRegistry {
     registry.register(Arc::new(GitCommitTool::new()));
     registry.register(Arc::new(GitAddTool::new()));
     registry.register(Arc::new(GitBranchTool::new()));
-    
+
     // Agent 工具（高级工具）
-    registry.register(Arc::new(ReviewerAgentTool::new()));    
+    registry.register(Arc::new(ReviewerAgentTool::new()));
     registry
 }

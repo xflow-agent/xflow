@@ -102,7 +102,6 @@ impl Message {
             tool_name: Some(tool_name.into()),
         }
     }
-
 }
 
 /// 流式响应块

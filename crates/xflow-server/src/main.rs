@@ -1,21 +1,18 @@
 //! xflow Web API 服务器入口
 
+use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::fs;
 
-use axum::{
-    routing::get,
-    Router,
-};
+use axum::http::{header, HeaderValue, Method};
+use axum::{routing::get, Router};
 use clap::Parser;
 use tower_http::{
-    cors::{CorsLayer, AllowOrigin},
+    cors::{AllowOrigin, CorsLayer},
     services::ServeDir,
     trace::TraceLayer,
 };
-use axum::http::{Method, header, HeaderValue};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use xflow_model::{ModelProvider, OpenAIProvider};
@@ -33,11 +30,11 @@ struct Args {
     /// - vLLM: http://localhost:8000/v1
     /// - OpenAI: https://api.openai.com/v1
     /// - Ollama: http://localhost:11434/v1
-    #[arg(short, long, default_value = "http://172.21.246.100:8000/v1")]
+    #[arg(short, long, default_value = "http://localhost:11434/v1")]
     base_url: String,
 
-    /// API Key (OpenAI/vLLM 可选)
-    #[arg(short = 'k', long, default_value = "sk-kmgyfhiuf2imftm9l2w0kdw3sgquqbab")]
+    /// API Key (OpenAI/vLLM 需要，Ollama 可省略)
+    #[arg(short = 'k', long, env = "XFLOW_API_KEY")]
     api_key: Option<String>,
 
     /// 模型名称
@@ -76,16 +73,17 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     // 创建应用状态
-    let workdir = PathBuf::from(&args.workdir).canonicalize()
+    let workdir = PathBuf::from(&args.workdir)
+        .canonicalize()
         .unwrap_or_else(|_| PathBuf::from(&args.workdir));
-    
+
     let state = Arc::new(AppState::new(provider, workdir));
 
     // 创建路由
     let app = Router::new()
         // API 路由
         .nest("/api", create_api_router(state.clone()))
-        // WebSocket 路由
+        // WebSocket 路由 (使用 XflowEvent 系统)
         .nest("/api", create_ws_router(state.clone()))
         // 健康检查
         .route("/health", get(|| async { "OK" }))
@@ -121,41 +119,42 @@ async fn main() -> anyhow::Result<()> {
 /// 初始化日志系统
 fn init_logging() {
     use chrono::Local;
-    
+
     // 日志文件路径 - 与 xflow 相同：~/.local/share/xflow/logs
     let log_dir = dirs::data_dir()
         .map(|p| p.join("xflow/logs"))
         .unwrap_or_else(std::env::temp_dir);
     let _ = fs::create_dir_all(&log_dir);
-    
+
     // 获取当前日期，格式：20260416
     let date_str = Local::now().format("%Y%m%d").to_string();
     let log_file = log_dir.join(format!("xflow-server-{}.log", date_str));
-    
+
     // 自定义时间格式：2026-04-14 15:11:45.823
-    let time_format = tracing_subscriber::fmt::time::ChronoLocal::new(
-        "%Y-%m-%d %H:%M:%S%.3f".parse().unwrap()
-    );
-    
+    let time_format =
+        tracing_subscriber::fmt::time::ChronoLocal::new("%Y-%m-%d %H:%M:%S%.3f".parse().unwrap());
+
     // 创建文件日志层 - 禁用 ANSI 颜色
     let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_file)
-            .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap()))
+        .with_writer(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_file)
+                .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap()),
+        )
         .with_ansi(false)
         .with_file(true)
         .with_line_number(true)
         .with_timer(time_format.clone());
-    
+
     // 控制台输出层 - 保留 ANSI 颜色
     let console_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
         .with_target(false)
         .with_ansi(true)
         .with_timer(time_format);
-    
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()

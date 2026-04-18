@@ -1,7 +1,7 @@
 //! REST API 路由
 
 use axum::{
-    extract::{Path, State, Json},
+    extract::{Json, Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -77,9 +77,7 @@ async fn create_session(
 }
 
 /// GET /sessions - 列出所有会话
-async fn list_sessions(
-    State(state): State<Arc<AppState>>,
-) -> Json<ListSessionsResponse> {
+async fn list_sessions(State(state): State<Arc<AppState>>) -> Json<ListSessionsResponse> {
     let sessions = state.sessions.read().await;
     let session_list: Vec<SessionInfo> = sessions
         .iter()
@@ -100,8 +98,10 @@ async fn list_sessions(
             }
         })
         .collect();
-    
-    Json(ListSessionsResponse { sessions: session_list })
+
+    Json(ListSessionsResponse {
+        sessions: session_list,
+    })
 }
 
 /// GET /sessions/:id - 获取会话信息
@@ -109,9 +109,10 @@ async fn get_session_info(
     State(state): State<Arc<AppState>>,
     Path(id): Path<SessionId>,
 ) -> Result<Json<SessionInfo>, ApiError> {
-    let session = state.get_session(id).await
-        .ok_or_else(|| ApiError { error: "会话不存在".to_string() })?;
-    
+    let session = state.get_session(id).await.ok_or_else(|| ApiError {
+        error: "会话不存在".to_string(),
+    })?;
+
     let session = session.lock().await;
     Ok(Json(SessionInfo {
         id,
@@ -126,11 +127,12 @@ async fn send_message(
     Path(id): Path<SessionId>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<Json<SendMessageResponse>, ApiError> {
-    let session = state.get_session(id).await
-        .ok_or_else(|| ApiError { error: "会话不存在".to_string() })?;
-    
+    let session = state.get_session(id).await.ok_or_else(|| ApiError {
+        error: "会话不存在".to_string(),
+    })?;
+
     let mut session = session.lock().await;
-    
+
     // 处理消息（这里简化处理，实际应该流式返回）
     match session.process(&req.message).await {
         Ok(_) => {
@@ -150,12 +152,13 @@ async fn clear_session(
     State(state): State<Arc<AppState>>,
     Path(id): Path<SessionId>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let session = state.get_session(id).await
-        .ok_or_else(|| ApiError { error: "会话不存在".to_string() })?;
-    
+    let session = state.get_session(id).await.ok_or_else(|| ApiError {
+        error: "会话不存在".to_string(),
+    })?;
+
     let mut session = session.lock().await;
     session.clear();
-    
+
     Ok(Json(serde_json::json!({ "success": true })))
 }
 

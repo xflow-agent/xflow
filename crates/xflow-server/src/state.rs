@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
-use xflow_core::Session;
+use xflow_core::{AutoConfirmAdapter, Session};
 use xflow_model::ModelProvider;
 
 /// 会话 ID
@@ -34,7 +34,9 @@ impl AppState {
     /// 创建新会话
     pub async fn create_session(&self) -> SessionId {
         let id = Uuid::new_v4();
-        let session = Session::new(self.provider.clone(), self.workdir.clone());
+        // 创建默认使用自动确认的适配器（后续会被 WebSocket 适配器替换）
+        let ui = AutoConfirmAdapter::approving();
+        let session = Session::new(self.provider.clone(), self.workdir.clone(), ui);
         let mut sessions = self.sessions.write().await;
         sessions.insert(id, Arc::new(Mutex::new(session)));
         id

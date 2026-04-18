@@ -29,3 +29,6 @@ glob = "0.3"
 
 # 忽略模式 (类似 .gitignore)
 ignore = "0.4"
+
+[dev-dependencies]
+tempfile = "3.0"

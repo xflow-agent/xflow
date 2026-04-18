@@ -38,8 +38,7 @@ pub struct Task {
 }
 
 /// 任务状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TaskStatus {
     /// 待处理
     #[default]
@@ -98,10 +97,12 @@ impl Task {
 
     /// 是否已完成（成功或失败）
     pub fn is_finished(&self) -> bool {
-        matches!(self.status, TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Skipped)
+        matches!(
+            self.status,
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Skipped
+        )
     }
 }
-
 
 /// Agent 执行响应
 #[derive(Debug, Clone)]
@@ -160,23 +161,25 @@ impl AgentContext {
             tool_results: Vec::new(),
         }
     }
-    
+
     /// 添加工具结果
     pub fn add_tool_result(&mut self, result: ToolResult) {
         self.tool_results.push(result);
     }
-    
+
     /// 获取工具结果的文本描述（用于注入到 prompt）
     pub fn tool_results_summary(&self) -> String {
         if self.tool_results.is_empty() {
             return String::new();
         }
-        
+
         let mut summary = String::from("已执行的工具及其结果:\n");
         for (i, tr) in self.tool_results.iter().enumerate() {
             // 安全截断，避免 UTF-8 边界问题
             let truncated = if tr.result.len() > 3000 {
-                let safe_end = tr.result.char_indices()
+                let safe_end = tr
+                    .result
+                    .char_indices()
                     .take_while(|(idx, _)| *idx < 3000)
                     .last()
                     .map(|(idx, c)| idx + c.len_utf8())

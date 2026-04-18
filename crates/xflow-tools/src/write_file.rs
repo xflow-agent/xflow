@@ -1,6 +1,6 @@
 //! write_file 工具实现
 
-use super::tool::Tool;
+use super::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -49,43 +49,38 @@ pub struct WriteFileArgs {
 }
 
 /// write_file 工具
-
 pub struct WriteFileTool;
 
-
-
 impl WriteFileTool {
-
     /// 创建新实例
-
     pub fn new() -> Self {
-
         Self
-
     }
-
 }
 
-
-
 impl Default for WriteFileTool {
-
     fn default() -> Self {
-
         Self::new()
-
     }
-
 }
 
 #[async_trait]
 impl Tool for WriteFileTool {
-    fn name(&self) -> &str {
-        "write_file"
-    }
-
-    fn description(&self) -> &str {
-        "写入文件内容。参数: path - 文件路径, content - 要写入的内容。会覆盖已存在的文件。"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "write_file",
+            description:
+                "写入文件内容。参数: path - 文件路径, content - 要写入的内容。会覆盖已存在的文件。",
+            category: ToolCategory::File,
+            requires_confirmation: true,
+            danger_level: 1,
+            display: ToolDisplayConfig {
+                primary_param: "path",
+                result_display: ResultDisplayType::Full,
+                max_preview_lines: 20,
+                max_preview_chars: 1000,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

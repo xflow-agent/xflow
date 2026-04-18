@@ -1,6 +1,6 @@
 //! list_directory 工具实现
 
-use super::tool::Tool;
+use super::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -31,12 +31,20 @@ impl Default for ListDirectoryTool {
 
 #[async_trait]
 impl Tool for ListDirectoryTool {
-    fn name(&self) -> &str {
-        "list_directory"
-    }
-
-    fn description(&self) -> &str {
-        "列出目录内容。参数: path - 目录路径，默认为当前目录"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "list_directory",
+            description: "列出目录内容。参数: path - 目录路径，默认为当前目录",
+            category: ToolCategory::File,
+            requires_confirmation: false,
+            danger_level: 0,
+            display: ToolDisplayConfig {
+                primary_param: "path",
+                result_display: ResultDisplayType::LineCount,
+                max_preview_lines: 10,
+                max_preview_chars: 500,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -55,9 +63,11 @@ impl Tool for ListDirectoryTool {
     async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
         let params: ListDirectoryArgs = match serde_json::from_value(args) {
             Ok(p) => p,
-            Err(_) => ListDirectoryArgs { path: ".".to_string() },
+            Err(_) => ListDirectoryArgs {
+                path: ".".to_string(),
+            },
         };
-        
+
         let path = PathBuf::from(&params.path);
 
         debug!("列出目录: {:?}", path);
@@ -87,7 +97,7 @@ impl Tool for ListDirectoryTool {
         while let Some(entry) = entries.next_entry().await? {
             let name = entry.file_name().to_string_lossy().to_string();
             let file_type = entry.file_type().await?;
-            
+
             if file_type.is_dir() {
                 dirs.push(format!("{}/", name));
             } else {
@@ -103,7 +113,7 @@ impl Tool for ListDirectoryTool {
         let mut result = format!("目录: {}\n", params.path);
         result.push_str(&format!("({} 目录, {} 文件)\n", dirs.len(), files.len()));
         result.push_str("---\n");
-        
+
         for dir in &dirs {
             result.push_str(&format!("[DIR]  {}\n", dir));
         }

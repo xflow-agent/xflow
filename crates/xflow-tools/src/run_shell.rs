@@ -1,6 +1,6 @@
 //! run_shell 工具实现
 
-use super::tool::Tool;
+use super::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
@@ -35,27 +35,70 @@ pub struct DangerAnalysis {
     pub reason: String,
 }
 
+/// 规范化命令用于检测（去除常见绕过技巧）
+fn normalize_command(cmd: &str) -> String {
+    let mut normalized = cmd.to_lowercase();
+
+    // 去除常见绕过字符
+    let replacements: [(&str, &str); 8] = [
+        ("\\ ", " "), // 转义空格
+        ("\\/", "/"), // 转义斜杠
+        ("'", ""),    // 单引号
+        ("\"", ""),   // 双引号
+        ("${", ""),   // 变量扩展开始
+        ("}", ""),    // 变量扩展结束
+        ("$", ""),    // 变量符号
+        ("  ", " "),  // 多余空格
+    ];
+
+    for (from, to) in &replacements {
+        normalized = normalized.replace(from, to);
+    }
+
+    // 去除连续空格
+    while normalized.contains("  ") {
+        normalized = normalized.replace("  ", " ");
+    }
+
+    normalized.trim().to_string()
+}
+
 /// 检测命令是否危险
 pub fn analyze_command(cmd: &str) -> DangerAnalysis {
     let cmd_lower = cmd.to_lowercase();
+    let cmd_normalized = normalize_command(cmd);
     let cmd_trimmed = cmd.trim();
 
     // 特殊检测: 管道执行远程脚本 - 最危险，优先检测
-    if (cmd_lower.contains("curl") || cmd_lower.contains("wget"))
-        && (cmd_lower.contains("| bash") || cmd_lower.contains("| sh") || cmd_lower.contains("| zsh"))
-    {
-        return DangerAnalysis {
-            is_dangerous: true,
-            level: 3,
-            reason: "执行远程脚本，极度危险".to_string(),
-        };
+    let remote_exec_patterns = [
+        ("curl", "| bash"),
+        ("curl", "| sh"),
+        ("curl", "| zsh"),
+        ("wget", "| bash"),
+        ("wget", "| sh"),
+        ("wget", "| zsh"),
+        ("curl", "-o- |"),
+        ("wget", "-qO- |"),
+        ("curl", "bash"),
+        ("wget", "bash"), // 无管道直接执行
+    ];
+
+    for (download, exec) in &remote_exec_patterns {
+        if cmd_lower.contains(download) && cmd_lower.contains(exec) {
+            return DangerAnalysis {
+                is_dangerous: true,
+                level: 3,
+                reason: "执行远程脚本，极度危险".to_string(),
+            };
+        }
     }
 
-    // 等级 3: 极度危险 - 系统破坏
+    // 等级 3: 极度危险 - 系统破坏（检查原始和规范化后的命令）
     let level3_patterns = [
         ("rm -rf / ", "可能删除整个系统"),
         ("rm -rf /\"", "可能删除整个系统"),
         ("rm -rf /*", "可能删除整个系统"),
+        ("rm -rf /", "可能删除整个系统"), // 规范化后匹配
         ("mkfs", "格式化磁盘"),
         ("fdisk", "磁盘分区操作"),
         ("dd if=", "磁盘镜像操作"),
@@ -64,10 +107,12 @@ pub fn analyze_command(cmd: &str) -> DangerAnalysis {
         (":(){ :|:& };:", "Fork 炸弹攻击"),
         ("chmod -r 777 /", "递归修改全系统权限"),
         ("chmod 777 /", "修改根目录权限"),
+        ("mv / /dev/null", "移动根目录到空设备"),
+        ("cp /dev/null /", "清空根目录"),
     ];
 
     for (pattern, reason) in level3_patterns {
-        if cmd_lower.contains(pattern) {
+        if cmd_lower.contains(pattern) || cmd_normalized.contains(pattern) {
             return DangerAnalysis {
                 is_dangerous: true,
                 level: 3,
@@ -75,9 +120,13 @@ pub fn analyze_command(cmd: &str) -> DangerAnalysis {
             };
         }
     }
-    
+
     // 特殊检测: rm -rf / 作为独立命令（删除根目录）
-    if cmd_trimmed == "rm -rf /" || cmd_trimmed.ends_with("rm -rf /") {
+    if cmd_trimmed == "rm -rf /"
+        || cmd_trimmed.ends_with("rm -rf /")
+        || cmd_normalized == "rm -rf /"
+        || cmd_normalized.ends_with(" rm -rf /")
+    {
         return DangerAnalysis {
             is_dangerous: true,
             level: 3,
@@ -88,6 +137,7 @@ pub fn analyze_command(cmd: &str) -> DangerAnalysis {
     // 等级 2: 高度危险 - 系统控制
     let level2_patterns = [
         ("rm -rf", "递归强制删除"),
+        ("rm -f", "强制删除"),
         ("shutdown", "关闭系统"),
         ("reboot", "重启系统"),
         ("halt", "停止系统"),
@@ -97,6 +147,10 @@ pub fn analyze_command(cmd: &str) -> DangerAnalysis {
         ("pkill -9", "强制终止进程"),
         ("kill -9 -1", "终止所有进程"),
         ("> /dev/null", "重定向到空设备（检查是否隐藏输出）"),
+        ("eval", "执行动态生成的命令"),
+        ("exec", "替换当前进程"),
+        ("source", "执行脚本"),
+        (". ", "执行脚本"),
     ];
 
     for (pattern, reason) in level2_patterns {
@@ -112,9 +166,11 @@ pub fn analyze_command(cmd: &str) -> DangerAnalysis {
     // 等级 1: 中度危险 - 需要注意
     let level1_patterns = [
         ("rm ", "删除文件"),
+        ("rmdir", "删除目录"),
         ("mv ", "移动/重命名文件"),
         ("chmod ", "修改权限"),
         ("chown ", "修改所有者"),
+        ("chgrp ", "修改组"),
         ("wget ", "下载文件"),
         ("curl ", "网络请求"),
         ("apt ", "包管理操作"),
@@ -122,12 +178,21 @@ pub fn analyze_command(cmd: &str) -> DangerAnalysis {
         ("yum ", "包管理操作"),
         ("dnf ", "包管理操作"),
         ("pip install", "Python 包安装"),
+        ("pip uninstall", "Python 包卸载"),
         ("npm install", "npm 包安装"),
+        ("npm uninstall", "npm 包卸载"),
         ("cargo install", "Cargo 包安装"),
         ("git push", "推送到远程仓库"),
+        ("git push --force", "强制推送"),
         ("git reset --hard", "硬重置 Git 历史"),
+        ("git clean -f", "强制清理未跟踪文件"),
         ("sudo ", "以超级用户权限执行"),
         ("su ", "切换用户"),
+        ("ssh ", "远程连接"),
+        ("scp ", "安全复制"),
+        ("rsync", "同步文件"),
+        ("docker", "Docker 操作"),
+        ("kubectl", "Kubernetes 操作"),
     ];
 
     for (pattern, reason) in level1_patterns {
@@ -165,12 +230,20 @@ impl Default for RunShellTool {
 
 #[async_trait]
 impl Tool for RunShellTool {
-    fn name(&self) -> &str {
-        "run_shell"
-    }
-
-    fn description(&self) -> &str {
-        "执行 Shell 命令。参数: command - 要执行的命令, workdir - 可选的工作目录, timeout - 超时秒数(默认30)。返回命令的标准输出和标准错误。"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "run_shell",
+            description: "执行 Shell 命令。参数: command - 要执行的命令, workdir - 可选的工作目录, timeout - 超时秒数(默认30)。返回命令的标准输出和标准错误。",
+            category: ToolCategory::Shell,
+            requires_confirmation: true,
+            danger_level: 2,
+            display: ToolDisplayConfig {
+                primary_param: "command",
+                result_display: ResultDisplayType::Summary,
+                max_preview_lines: 20,
+                max_preview_chars: 800,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -206,8 +279,11 @@ impl Tool for RunShellTool {
                 analysis.level, params.command, analysis.reason
             );
         }
-        
-        debug!("执行命令: {} (危险等级: {})", params.command, analysis.level);
+
+        debug!(
+            "执行命令: {} (危险等级: {})",
+            params.command, analysis.level
+        );
 
         // 构建命令
         let mut cmd = Command::new("bash");

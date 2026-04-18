@@ -1,6 +1,6 @@
 //! search_file 工具实现 (使用 ripgrep)
 
-use super::tool::Tool;
+use super::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
@@ -37,12 +37,20 @@ impl Default for SearchFileTool {
 
 #[async_trait]
 impl Tool for SearchFileTool {
-    fn name(&self) -> &str {
-        "search_file"
-    }
-
-    fn description(&self) -> &str {
-        "在文件中搜索内容（使用 ripgrep）。参数: pattern - 搜索模式（支持正则），path - 搜索路径（可选，默认当前目录），ignore_case - 是否忽略大小写"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "search_file",
+            description: "在文件中搜索内容（使用 ripgrep）。参数: pattern - 搜索模式（支持正则），path - 搜索路径（可选，默认当前目录），ignore_case - 是否忽略大小写",
+            category: ToolCategory::Search,
+            requires_confirmation: false,
+            danger_level: 0,
+            display: ToolDisplayConfig {
+                primary_param: "pattern",
+                result_display: ResultDisplayType::LineCount,
+                max_preview_lines: 10,
+                max_preview_chars: 500,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -69,25 +77,28 @@ impl Tool for SearchFileTool {
     async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
         let params: SearchFileArgs = serde_json::from_value(args)?;
 
-        debug!("搜索文件: pattern={}, path={:?}", params.pattern, params.path);
+        debug!(
+            "搜索文件: pattern={}, path={:?}",
+            params.pattern, params.path
+        );
 
         // 构建 rg 命令
         let mut cmd = Command::new("rg");
-        
+
         cmd.arg(&params.pattern);
-        
+
         if let Some(path) = &params.path {
             cmd.arg(path);
         }
-        
+
         if params.ignore_case {
             cmd.arg("-i");
         }
-        
+
         // 添加输出格式选项
-        cmd.arg("--line-number")    // 显示行号
-           .arg("--color=never")    // 禁用颜色
-           .arg("-n");              // 简洁格式
+        cmd.arg("--line-number") // 显示行号
+            .arg("--color=never") // 禁用颜色
+            .arg("-n"); // 简洁格式
 
         // 执行命令
         let output = match cmd.output() {
@@ -104,22 +115,25 @@ impl Tool for SearchFileTool {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let lines: Vec<&str> = stdout.lines().collect();
-            
+
             if lines.is_empty() {
                 return Ok("未找到匹配项".to_string());
             }
 
             let mut result = format!("找到 {} 处匹配:\n", lines.len());
             result.push_str("---\n");
-            
+
             // 限制输出行数
             let max_lines = 50;
             for line in lines.iter().take(max_lines) {
                 result.push_str(&format!("{}\n", line));
             }
-            
+
             if lines.len() > max_lines {
-                result.push_str(&format!("... 还有 {} 行结果未显示\n", lines.len() - max_lines));
+                result.push_str(&format!(
+                    "... 还有 {} 行结果未显示\n",
+                    lines.len() - max_lines
+                ));
             }
 
             Ok(result)

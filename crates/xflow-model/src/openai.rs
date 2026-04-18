@@ -21,7 +21,12 @@ pub struct OpenAIProvider {
 
 impl OpenAIProvider {
     /// 创建新的 OpenAI 兼容提供者
-    pub fn new(base_url: String, api_key: Option<String>, model: String, provider_name: String) -> Self {
+    pub fn new(
+        base_url: String,
+        api_key: Option<String>,
+        model: String,
+        provider_name: String,
+    ) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(300))
             .connect_timeout(std::time::Duration::from_secs(30))
@@ -29,11 +34,11 @@ impl OpenAIProvider {
             .build()
             .unwrap_or_else(|_| Client::new());
 
-        Self { 
-            client, 
+        Self {
+            client,
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
-            model, 
+            model,
             provider_name,
         }
     }
@@ -81,16 +86,19 @@ impl OpenAIProvider {
                     tool_calls: if msg.tool_calls.is_empty() {
                         None
                     } else {
-                        Some(msg.tool_calls.into_iter()
-                            .map(|tc| OpenAIToolCall {
-                                id: uuid::Uuid::new_v4().to_string(),
-                                call_type: "function".to_string(),
-                                function: OpenAIFunctionCall {
-                                    name: tc.function.name,
-                                    arguments: tc.function.arguments.to_string(),
-                                },
-                            })
-                            .collect())
+                        Some(
+                            msg.tool_calls
+                                .into_iter()
+                                .map(|tc| OpenAIToolCall {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    call_type: "function".to_string(),
+                                    function: OpenAIFunctionCall {
+                                        name: tc.function.name,
+                                        arguments: tc.function.arguments.to_string(),
+                                    },
+                                })
+                                .collect(),
+                        )
                     },
                     tool_call_id: None,
                 },
@@ -172,9 +180,9 @@ impl ModelProvider for OpenAIProvider {
 
             let mut stream = response.bytes_stream();
             let mut buffer = String::new();
-            
+
             // 累积工具调用（增量式）
-            let mut pending_tool_calls: std::collections::HashMap<usize, (String, String, String)> = 
+            let mut pending_tool_calls: std::collections::HashMap<usize, (String, String, String)> =
                 std::collections::HashMap::new();
 
             while let Some(chunk) = stream.next().await {
@@ -211,7 +219,7 @@ impl ModelProvider for OpenAIProvider {
                                 let reasoning = choice.delta.reasoning_content
                                     .or(choice.delta.reasoning)
                                     .filter(|s| !s.is_empty());
-                                
+
                                 if !content.is_empty() || reasoning.is_some() {
                                     yield Ok(StreamChunk {
                                         content,
@@ -230,7 +238,7 @@ impl ModelProvider for OpenAIProvider {
                                             String::new(),  // name
                                             String::new(),  // arguments
                                         ));
-                                        
+
                                         // 累积各部分
                                         if let Some(id) = tc.id {
                                             if !id.is_empty() {
@@ -270,14 +278,14 @@ impl ModelProvider for OpenAIProvider {
                                             }
                                         })
                                         .collect();
-                                    
+
                                     yield Ok(StreamChunk {
                                         content: String::new(),
                                         reasoning: None,
                                         done: true,
                                         tool_calls: converted,
                                     });
-                                    
+
                                     pending_tool_calls.clear();
                                 }
                             }
@@ -485,10 +493,7 @@ mod tests {
 
     #[test]
     fn test_openai_provider_with_key() {
-        let provider = OpenAIProvider::openai(
-            "sk-test".to_string(),
-            "gpt-4".to_string(),
-        );
+        let provider = OpenAIProvider::openai("sk-test".to_string(), "gpt-4".to_string());
         assert_eq!(provider.model_info().provider, "openai");
         assert_eq!(provider.model_info().name, "gpt-4");
     }

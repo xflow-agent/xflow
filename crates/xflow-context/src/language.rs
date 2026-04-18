@@ -30,7 +30,7 @@ pub enum Language {
     Erlang,
     Clojure,
     Dart,
-    
+
     // 配置/标记语言
     Json,
     Yaml,
@@ -39,14 +39,14 @@ pub enum Language {
     Html,
     Css,
     Markdown,
-    
+
     // Shell
     Shell,
     Bash,
     Zsh,
     Fish,
     PowerShell,
-    
+
     // 其他
     Sql,
     Dockerfile,
@@ -102,31 +102,62 @@ impl Language {
             Language::Unknown => "Unknown",
         }
     }
-    
+
     /// 是否是主要编程语言
     pub fn is_programming_language(&self) -> bool {
-        matches!(self,
-            Language::Rust | Language::TypeScript | Language::JavaScript |
-            Language::Python | Language::Go | Language::Java | Language::Kotlin |
-            Language::C | Language::Cpp | Language::CSharp |
-            Language::Ruby | Language::Php | Language::Swift |
-            Language::Scala | Language::Haskell | Language::Lua |
-            Language::Perl | Language::R | Language::Zig |
-            Language::Elixir | Language::Erlang | Language::Clojure | Language::Dart
+        matches!(
+            self,
+            Language::Rust
+                | Language::TypeScript
+                | Language::JavaScript
+                | Language::Python
+                | Language::Go
+                | Language::Java
+                | Language::Kotlin
+                | Language::C
+                | Language::Cpp
+                | Language::CSharp
+                | Language::Ruby
+                | Language::Php
+                | Language::Swift
+                | Language::Scala
+                | Language::Haskell
+                | Language::Lua
+                | Language::Perl
+                | Language::R
+                | Language::Zig
+                | Language::Elixir
+                | Language::Erlang
+                | Language::Clojure
+                | Language::Dart
         )
     }
-    
+
     /// 获取文件的注释前缀
     pub fn comment_prefix(&self) -> &'static str {
         match self {
-            Language::Rust | Language::C | Language::Cpp | Language::Go |
-            Language::Java | Language::JavaScript | Language::TypeScript |
-            Language::CSharp | Language::Swift | Language::Kotlin |
-            Language::Scala | Language::Dart => "//",
-            Language::Python | Language::Ruby | Language::Shell |
-            Language::Bash | Language::Zsh | Language::Fish |
-            Language::Perl | Language::R | Language::Yaml |
-            Language::Toml => "#",
+            Language::Rust
+            | Language::C
+            | Language::Cpp
+            | Language::Go
+            | Language::Java
+            | Language::JavaScript
+            | Language::TypeScript
+            | Language::CSharp
+            | Language::Swift
+            | Language::Kotlin
+            | Language::Scala
+            | Language::Dart => "//",
+            Language::Python
+            | Language::Ruby
+            | Language::Shell
+            | Language::Bash
+            | Language::Zsh
+            | Language::Fish
+            | Language::Perl
+            | Language::R
+            | Language::Yaml
+            | Language::Toml => "#",
             Language::Sql => "--",
             Language::Lua => "--",
             Language::Haskell => "--",
@@ -138,16 +169,18 @@ impl Language {
 
 /// 根据文件扩展名检测语言
 pub fn detect_language(path: &Path) -> Language {
-    let ext = path.extension()
+    let ext = path
+        .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
-    
-    let filename = path.file_name()
+
+    let filename = path
+        .file_name()
         .and_then(|n| n.to_str())
         .map(|n| n.to_lowercase())
         .unwrap_or_default();
-    
+
     // 先检查特殊文件名
     match filename.as_str() {
         "dockerfile" => return Language::Dockerfile,
@@ -155,103 +188,103 @@ pub fn detect_language(path: &Path) -> Language {
         ".gitignore" => return Language::GitIgnore,
         _ => {}
     }
-    
+
     // 根据扩展名判断
     match ext.as_str() {
         // Rust
         "rs" => Language::Rust,
-        
+
         // TypeScript/JavaScript
         "ts" | "tsx" => Language::TypeScript,
         "js" | "jsx" | "mjs" | "cjs" => Language::JavaScript,
-        
+
         // Python
         "py" | "pyi" | "pyw" => Language::Python,
-        
+
         // Go
         "go" => Language::Go,
-        
+
         // Java/Kotlin
         "java" => Language::Java,
         "kt" | "kts" => Language::Kotlin,
-        
+
         // C/C++
         "c" | "h" => Language::C,
         "cpp" | "cxx" | "cc" | "hpp" | "hxx" | "hh" => Language::Cpp,
-        
+
         // C#
         "cs" => Language::CSharp,
-        
+
         // Ruby
         "rb" | "rake" | "gemspec" => Language::Ruby,
-        
+
         // PHP
         "php" => Language::Php,
-        
+
         // Swift/Objective-C
         "swift" => Language::Swift,
         "m" | "mm" => Language::ObjectiveC,
-        
+
         // Scala
         "scala" | "sc" => Language::Scala,
-        
+
         // Haskell
         "hs" | "lhs" => Language::Haskell,
-        
+
         // Lua
         "lua" => Language::Lua,
-        
+
         // Perl
         "pl" | "pm" | "t" => Language::Perl,
-        
+
         // R
         "r" | "rmd" => Language::R,
-        
+
         // Zig
         "zig" => Language::Zig,
-        
+
         // Elixir
         "ex" | "exs" => Language::Elixir,
-        
+
         // Erlang
         "erl" | "hrl" => Language::Erlang,
-        
+
         // Clojure
         "clj" | "cljs" | "cljc" => Language::Clojure,
-        
+
         // Dart
         "dart" => Language::Dart,
-        
+
         // JSON
         "json" => Language::Json,
-        
+
         // YAML
         "yaml" | "yml" => Language::Yaml,
-        
+
         // TOML
         "toml" => Language::Toml,
-        
+
         // XML
         "xml" | "xsl" | "xslt" | "svg" => Language::Xml,
-        
+
         // HTML
         "html" | "htm" | "xhtml" => Language::Html,
-        
+
         // CSS
         "css" | "scss" | "sass" | "less" => Language::Css,
-        
+
         // Markdown
         "md" | "markdown" => Language::Markdown,
-        
+
         // Shell
         "sh" => Language::Bash,
         "zsh" => Language::Zsh,
         "fish" => Language::Fish,
         "ps1" | "psm1" | "psd1" => Language::PowerShell,
-        
+
         // SQL
         "sql" => Language::Sql,
-        
+
         _ => Language::Unknown,
     }
 }
@@ -259,43 +292,75 @@ pub fn detect_language(path: &Path) -> Language {
 /// 判断文件是否是源代码文件
 pub fn is_source_file(path: &Path) -> bool {
     let lang = detect_language(path);
-    lang.is_programming_language() || matches!(lang,
-        Language::Json | Language::Yaml | Language::Toml |
-        Language::Xml | Language::Html | Language::Css |
-        Language::Markdown | Language::Dockerfile | Language::Makefile |
-        Language::Sql
-    )
+    lang.is_programming_language()
+        || matches!(
+            lang,
+            Language::Json
+                | Language::Yaml
+                | Language::Toml
+                | Language::Xml
+                | Language::Html
+                | Language::Css
+                | Language::Markdown
+                | Language::Dockerfile
+                | Language::Makefile
+                | Language::Sql
+        )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    
+
     #[test]
     fn test_detect_rust() {
-        assert_eq!(detect_language(PathBuf::from("main.rs").as_path()), Language::Rust);
-        assert_eq!(detect_language(PathBuf::from("lib.rs").as_path()), Language::Rust);
+        assert_eq!(
+            detect_language(PathBuf::from("main.rs").as_path()),
+            Language::Rust
+        );
+        assert_eq!(
+            detect_language(PathBuf::from("lib.rs").as_path()),
+            Language::Rust
+        );
     }
-    
+
     #[test]
     fn test_detect_typescript() {
-        assert_eq!(detect_language(PathBuf::from("app.ts").as_path()), Language::TypeScript);
-        assert_eq!(detect_language(PathBuf::from("component.tsx").as_path()), Language::TypeScript);
+        assert_eq!(
+            detect_language(PathBuf::from("app.ts").as_path()),
+            Language::TypeScript
+        );
+        assert_eq!(
+            detect_language(PathBuf::from("component.tsx").as_path()),
+            Language::TypeScript
+        );
     }
-    
+
     #[test]
     fn test_detect_python() {
-        assert_eq!(detect_language(PathBuf::from("main.py").as_path()), Language::Python);
-        assert_eq!(detect_language(PathBuf::from("__init__.py").as_path()), Language::Python);
+        assert_eq!(
+            detect_language(PathBuf::from("main.py").as_path()),
+            Language::Python
+        );
+        assert_eq!(
+            detect_language(PathBuf::from("__init__.py").as_path()),
+            Language::Python
+        );
     }
-    
+
     #[test]
     fn test_detect_dockerfile() {
-        assert_eq!(detect_language(PathBuf::from("Dockerfile").as_path()), Language::Dockerfile);
-        assert_eq!(detect_language(PathBuf::from("dockerfile").as_path()), Language::Dockerfile);
+        assert_eq!(
+            detect_language(PathBuf::from("Dockerfile").as_path()),
+            Language::Dockerfile
+        );
+        assert_eq!(
+            detect_language(PathBuf::from("dockerfile").as_path()),
+            Language::Dockerfile
+        );
     }
-    
+
     #[test]
     fn test_is_source_file() {
         assert!(is_source_file(PathBuf::from("main.rs").as_path()));

@@ -3,11 +3,9 @@
 //! 提供 REST API 和 WebSocket 接口
 
 mod api;
-mod ws;
 mod state;
-mod ws_interaction;
+mod ws;
 
 pub use api::*;
-pub use ws::*;
 pub use state::*;
-pub use ws_interaction::*;
+pub use ws::create_ws_router;

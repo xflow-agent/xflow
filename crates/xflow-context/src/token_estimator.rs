@@ -23,55 +23,58 @@ impl TokenEstimator {
             chars_per_token: 4.0,
         }
     }
-    
+
     /// 估算文本的 token 数量
     pub fn estimate(&self, text: &str) -> usize {
         if text.is_empty() {
             return 0;
         }
-        
+
         // 计算中文字符数
-        let chinese_chars = text.chars().filter(|c| {
-            (*c >= '\u{4E00}' && *c <= '\u{9FFF}') || // CJK Unified Ideographs
+        let chinese_chars = text
+            .chars()
+            .filter(|c| {
+                (*c >= '\u{4E00}' && *c <= '\u{9FFF}') || // CJK Unified Ideographs
             (*c >= '\u{3400}' && *c <= '\u{4DBF}') || // CJK Extension A
             (*c >= '\u{20000}' && *c <= '\u{2A6DF}') // CJK Extension B
-        }).count();
-        
+            })
+            .count();
+
         // 计算非中文字符数
         let other_chars = text.chars().count() - chinese_chars;
-        
+
         // 中文约 1.5 字符/token，英文约 4 字符/token
         let chinese_tokens = (chinese_chars as f64 / 1.5).ceil() as usize;
         let other_tokens = (other_chars as f64 / self.chars_per_token).ceil() as usize;
-        
+
         chinese_tokens + other_tokens
     }
-    
+
     /// 估算多条消息的总 token 数
     pub fn estimate_messages(&self, messages: &[&str]) -> usize {
         messages.iter().map(|m| self.estimate(m)).sum()
     }
-    
+
     /// 检查是否超出预算
     pub fn is_over_budget(&self, text: &str, budget: usize) -> bool {
         self.estimate(text) > budget
     }
-    
+
     /// 截断文本到指定 token 数
     pub fn truncate(&self, text: &str, max_tokens: usize) -> String {
         if text.is_empty() {
             return String::new();
         }
-        
+
         let estimated = self.estimate(text);
         if estimated <= max_tokens {
             return text.to_string();
         }
-        
+
         // 按比例估算需要保留的字符数
         let ratio = max_tokens as f64 / estimated as f64;
         let target_chars = (text.chars().count() as f64 * ratio) as usize;
-        
+
         // 截断并添加省略号
         let truncated: String = text.chars().take(target_chars.saturating_sub(3)).collect();
         format!("{}...", truncated)
@@ -86,13 +89,13 @@ pub fn estimate_tokens(text: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_estimate_empty() {
         let estimator = TokenEstimator::new();
         assert_eq!(estimator.estimate(""), 0);
     }
-    
+
     #[test]
     fn test_estimate_english() {
         let estimator = TokenEstimator::new();
@@ -100,7 +103,7 @@ mod tests {
         let tokens = estimator.estimate("Hello, world!");
         assert!(tokens >= 3 && tokens <= 4);
     }
-    
+
     #[test]
     fn test_estimate_chinese() {
         let estimator = TokenEstimator::new();
@@ -108,7 +111,7 @@ mod tests {
         let tokens = estimator.estimate("你好世界");
         assert!(tokens >= 2 && tokens <= 4);
     }
-    
+
     #[test]
     fn test_estimate_mixed() {
         let estimator = TokenEstimator::new();
@@ -116,7 +119,7 @@ mod tests {
         let tokens = estimator.estimate("Hello 你好");
         assert!(tokens > 0);
     }
-    
+
     #[test]
     fn test_truncate() {
         let estimator = TokenEstimator::new();

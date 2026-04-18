@@ -1,6 +1,6 @@
 //! read_file 工具实现
 
-use super::tool::Tool;
+use super::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -30,7 +30,56 @@ fn is_sensitive_path(path: &std::path::Path) -> bool {
 
 /// 检查路径是否包含目录遍历攻击
 fn has_path_traversal(path: &str) -> bool {
-    path.contains("..") || path.contains("~")
+    // 解码 URL 编码
+    let decoded = path
+        .replace("%2e", ".")
+        .replace("%2f", "/")
+        .replace("%5c", "\\");
+
+    // 检查各种遍历模式
+    decoded.contains("..") 
+        || decoded.contains("~")
+        || decoded.starts_with("/")
+        || decoded.starts_with("\\")
+        || decoded.contains(":/")  // Windows 绝对路径
+        || decoded.contains(":\\")
+}
+
+/// 规范化并验证路径
+fn normalize_and_validate_path(
+    path_str: &str,
+    workdir: &std::path::Path,
+) -> Result<PathBuf, String> {
+    // 首先检查明显的遍历攻击
+    if has_path_traversal(path_str) {
+        return Err("路径包含非法字符".to_string());
+    }
+
+    let path = PathBuf::from(path_str);
+
+    // 如果路径是绝对路径，检查是否在允许范围内
+    if path.is_absolute() {
+        // 检查是否是敏感路径
+        if is_sensitive_path(&path) {
+            return Err("无法访问系统敏感路径".to_string());
+        }
+        Ok(path)
+    } else {
+        // 相对路径，与工作目录拼接
+        let full_path = workdir.join(&path);
+        // 规范化路径（解析 .. 和 .）
+        match full_path.canonicalize() {
+            Ok(canonical) => {
+                // 确保规范化后的路径仍在允许的范围内
+                // 这里可以添加额外的检查，如确保路径在工作目录下
+                Ok(canonical)
+            }
+            Err(_) => {
+                // 文件可能不存在，返回拼接后的路径
+                Ok(full_path)
+            }
+        }
+    }
 }
 
 /// read_file 工具参数
@@ -58,12 +107,20 @@ impl Default for ReadFileTool {
 
 #[async_trait]
 impl Tool for ReadFileTool {
-    fn name(&self) -> &str {
-        "read_file"
-    }
-
-    fn description(&self) -> &str {
-        "读取文件内容。参数: path - 要读取的文件路径（绝对路径或相对路径）"
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata {
+            name: "read_file",
+            description: "读取文件内容。参数: path - 要读取的文件路径（绝对路径或相对路径）",
+            category: ToolCategory::File,
+            requires_confirmation: false,
+            danger_level: 0,
+            display: ToolDisplayConfig {
+                primary_param: "path",
+                result_display: ResultDisplayType::LineCount,
+                max_preview_lines: 10,
+                max_preview_chars: 500,
+            },
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -81,15 +138,20 @@ impl Tool for ReadFileTool {
 
     async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
         let params: ReadFileArgs = serde_json::from_value(args)?;
-        let path = PathBuf::from(&params.path);
 
-        debug!("读取文件: {:?}", path);
+        debug!("读取文件: {}", params.path);
 
-        // 安全检查：目录遍历攻击
-        if has_path_traversal(&params.path) {
-            warn!("检测到目录遍历攻击尝试: {}", params.path);
-            return Ok(format!("错误: 路径包含非法字符: {}", params.path));
-        }
+        // 获取当前工作目录
+        let workdir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+        // 规范化并验证路径
+        let path = match normalize_and_validate_path(&params.path, &workdir) {
+            Ok(p) => p,
+            Err(e) => {
+                warn!("路径验证失败: {} - {}", params.path, e);
+                return Ok(format!("错误: {}", e));
+            }
+        };
 
         // 安全检查：敏感路径
         if is_sensitive_path(&path) {
@@ -119,7 +181,13 @@ impl Tool for ReadFileTool {
             }
             Err(e) => {
                 warn!("读取文件失败: {:?}", e);
-                Ok(format!("错误: 无法读取文件 {}: {}", params.path, e))
+                // 清理错误信息，避免泄露内部路径
+                let safe_error = match e.kind() {
+                    std::io::ErrorKind::NotFound => "文件不存在".to_string(),
+                    std::io::ErrorKind::PermissionDenied => "权限不足".to_string(),
+                    _ => "读取失败".to_string(),
+                };
+                Ok(format!("错误: {}", safe_error))
             }
         }
     }

@@ -6,7 +6,7 @@ use rustyline::history::DefaultHistory;
 use rustyline::{DefaultEditor, Editor};
 use std::path::Path;
 use std::sync::Arc;
-use xflow_core::Session;
+use xflow_core::{CliAdapter, Session};
 use xflow_model::ModelProvider;
 
 /// REPL 交互界面
@@ -19,36 +19,37 @@ impl Repl {
     /// 创建新的 REPL 实例
     pub fn new(provider: Arc<dyn ModelProvider>, model: &str, workdir: &Path) -> Result<Self> {
         // 初始化编辑器
-        let mut editor = DefaultEditor::new()
-            .context("无法初始化 rustyline 编辑器")?;
+        let mut editor = DefaultEditor::new().context("无法初始化 rustyline 编辑器")?;
 
         // 加载历史记录
         let history_path = dirs::data_dir()
             .map(|p| p.join("xflow/history.txt"))
             .unwrap_or_else(|| Path::new(".xflow_history").to_path_buf());
-        
+
         if history_path.exists() {
             let _ = editor.load_history(&history_path);
         }
 
+        // 创建 CLI 适配器
+        let ui_adapter = CliAdapter::new();
+
         // 初始化会话
-        let mut session = Session::new(provider, workdir.to_path_buf());
+        let mut session = Session::new(provider, workdir.to_path_buf(), ui_adapter);
 
         // 获取完整的工作目录路径
-        let full_workdir = workdir.canonicalize().unwrap_or_else(|_| workdir.to_path_buf());
-        
+        let full_workdir = workdir
+            .canonicalize()
+            .unwrap_or_else(|_| workdir.to_path_buf());
+
         // 打印欢迎信息（显示完整工作目录和模型）
         print_welcome(&full_workdir, model);
-        
+
         // 初始化项目上下文（静默初始化）
         if let Err(e) = session.init_project_context() {
             tracing::warn!("项目上下文初始化失败: {}", e);
         }
 
-        Ok(Self { 
-            editor, 
-            session,
-        })
+        Ok(Self { editor, session })
     }
 
     /// 运行 REPL 主循环
@@ -93,7 +94,7 @@ impl Repl {
         let history_path = dirs::data_dir()
             .map(|p| p.join("xflow/history.txt"))
             .unwrap_or_else(|| Path::new(".xflow_history").to_path_buf());
-        
+
         if let Some(parent) = history_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -143,7 +144,7 @@ fn print_welcome(workdir: &Path, model: &str) {
         "██╔╝ ██╗██║     ███████╗╚██████╔╝╚███╔███╔╝",
         "╚═╝  ╚═╝╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝ ",
     ];
-    
+
     // 右侧信息 (与logo顶部对齐)
     let version = env!("CARGO_PKG_VERSION");
     let info: [String; 6] = [
@@ -154,22 +155,20 @@ fn print_welcome(workdir: &Path, model: &str) {
         format!("\x1b[90m工作目录:\x1b[0m {}", workdir.display()),
         String::new(),
     ];
-    
+
     println!();
-    
+
     // 逐行输出 logo + info
     for i in 0..logo.len() {
         let left = logo[i];
         let right = &info[i];
         println!("{}  {}", left, right);
     }
-    
+
     println!();
     println!("  Hi～今天想做点什么？");
     println!();
 }
-
-
 
 /// 打印帮助信息
 fn print_help() {

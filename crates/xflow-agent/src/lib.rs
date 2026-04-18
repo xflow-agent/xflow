@@ -5,5 +5,5 @@
 mod agent;
 mod reviewer;
 
-pub use agent::{Agent, AgentType, AgentContext, AgentResponse, Task, TaskStatus, ToolResult};
+pub use agent::{Agent, AgentContext, AgentResponse, AgentType, Task, TaskStatus, ToolResult};
 pub use reviewer::ReviewerAgent;
