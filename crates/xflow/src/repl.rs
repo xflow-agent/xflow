@@ -3,23 +3,57 @@
 use anyhow::{Context, Result};
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
-use rustyline::{DefaultEditor, Editor};
+use rustyline::validate::{ValidationContext, ValidationResult, Validator};
+use rustyline::{Cmd, Completer, Editor, Helper, Highlighter, Hinter, KeyCode, KeyEvent, Modifiers};
 use std::path::Path;
 use std::sync::Arc;
 use xflow_core::{CliAdapter, InterruptInfo, Session};
 use xflow_model::ModelProvider;
 
+// ── rustyline Helper：支持多行编辑 ──────────────────────────────
+
+/// xflow 的 rustyline Helper，启用多行编辑支持
+///
+/// 多行输入方式：
+/// - Alt+Enter / Ctrl+J：插入换行（不提交）
+/// - Enter：提交输入
+/// - 反斜杠 \ 结尾：自动续行
+#[derive(Helper, Completer, Hinter, Highlighter)]
+struct XflowHelper;
+
+impl Validator for XflowHelper {
+    /// 验证输入是否完整：反斜杠结尾时视为续行，Enter 换行继续输入
+    fn validate(&self, ctx: &mut ValidationContext) -> rustyline::Result<ValidationResult> {
+        let input = ctx.input();
+        // 去掉末尾空白后，以反斜杠结尾则视为续行
+        if input.trim_end().ends_with('\\') {
+            Ok(ValidationResult::Incomplete)
+        } else {
+            Ok(ValidationResult::Valid(None))
+        }
+    }
+}
+
 /// REPL 交互界面
 pub struct Repl {
-    editor: Editor<(), DefaultHistory>,
+    editor: Editor<XflowHelper, DefaultHistory>,
     session: Session,
 }
 
 impl Repl {
     /// 创建新的 REPL 实例
     pub fn new(provider: Arc<dyn ModelProvider>, model: &str, workdir: &Path) -> Result<Self> {
-        // 初始化编辑器
-        let mut editor = DefaultEditor::new().context("无法初始化 rustyline 编辑器")?;
+        // 初始化编辑器（使用 XflowHelper 支持多行）
+        let mut editor = Editor::new().context("无法初始化 rustyline 编辑器")?;
+        editor.set_helper(Some(XflowHelper));
+
+        // Alt+Enter：插入换行（不提交）
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Enter, Modifiers::ALT),
+            Cmd::Newline,
+        );
+        // Ctrl+J：插入换行（不提交），作为 Alt+Enter 的 fallback
+        editor.bind_sequence(KeyEvent::ctrl('j'), Cmd::Newline);
 
         // 加载历史记录
         let history_path = dirs::data_dir()
@@ -65,7 +99,8 @@ impl Repl {
 
             match readline {
                 Ok(line) => {
-                    let line = line.trim();
+                    // 多行输入只去除首尾空白行，保留内部换行和缩进
+                    let line = line.trim_start_matches('\n').trim_end();
                     if line.is_empty() {
                         continue;
                     }
@@ -187,6 +222,11 @@ fn print_help() {
   /exit, /quit, /q 退出
   /clear           清空会话
   /model           显示当前模型
+
+多行输入:
+  Alt+Enter / Ctrl+J  插入换行（不提交）
+  Enter               提交输入
+  行尾 \              续行（下次 Enter 继续输入）
 "#
     );
 }
