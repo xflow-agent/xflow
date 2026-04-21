@@ -111,7 +111,7 @@ impl Tool for ReadFileTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "read_file",
-            description: "读取文件内容。参数: path - 要读取的文件路径（绝对路径或相对路径）",
+            description: "Read file contents. Param: path - file path to read (absolute or relative)",
             category: ToolCategory::File,
             danger_level: 0,
             display: ToolDisplayConfig {
@@ -129,7 +129,7 @@ impl Tool for ReadFileTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "要读取的文件路径"
+                    "description": "File path to read"
                 }
             },
             "required": ["path"]

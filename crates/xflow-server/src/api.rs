@@ -133,10 +133,8 @@ async fn send_message(
 
     let mut session = session.lock().await;
 
-    // 处理消息（这里简化处理，实际应该流式返回）
     match session.process(&req.message).await {
         Ok(_) => {
-            // 返回空响应，实际响应已通过流式输出
             Ok(Json(SendMessageResponse {
                 response: "消息已处理".to_string(),
             }))

@@ -2,6 +2,7 @@
 //!
 //! 提供工具 trait 定义和内置工具实现
 
+mod agent_executor;
 mod agent_tool;
 mod edit_file;
 mod git;
@@ -12,6 +13,7 @@ mod search_file;
 mod tool;
 mod write_file;
 
+pub use agent_executor::AgentExecutor;
 pub use agent_tool::ReviewerAgentTool;
 pub use edit_file::EditFileTool;
 pub use git::{GitAddTool, GitBranchTool, GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool};
@@ -20,7 +22,7 @@ pub use read_file::ReadFileTool;
 pub use run_shell::{analyze_command, DangerAnalysis, RunShellTool};
 pub use search_file::SearchFileTool;
 pub use tool::{
-    ResultDisplayType, Tool, ToolCall, ToolCategory, ToolConfirmationRequest, ToolDefinition,
+    ResultDisplayType, Tool, ToolCategory, ToolConfirmationRequest, ToolDefinition,
     ToolDisplayConfig, ToolMetadata,
 };
 
@@ -68,21 +70,17 @@ impl Default for ToolRegistry {
     }
 }
 
-/// 创建默认工具注册表
+/// 创建默认工具注册表（不含 Agent 工具）
 pub fn create_default_tools() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
 
-    // 文件工具
     registry.register(Arc::new(ReadFileTool::new()));
     registry.register(Arc::new(WriteFileTool::new()));
-    registry.register(Arc::new(EditFileTool::new())); // 新增 edit_file
+    registry.register(Arc::new(EditFileTool::new()));
     registry.register(Arc::new(ListDirectoryTool::new()));
     registry.register(Arc::new(SearchFileTool::new()));
-
-    // Shell 工具
     registry.register(Arc::new(RunShellTool::new()));
 
-    // Git 工具
     registry.register(Arc::new(GitStatusTool::new()));
     registry.register(Arc::new(GitDiffTool::new()));
     registry.register(Arc::new(GitLogTool::new()));
@@ -90,7 +88,12 @@ pub fn create_default_tools() -> ToolRegistry {
     registry.register(Arc::new(GitAddTool::new()));
     registry.register(Arc::new(GitBranchTool::new()));
 
-    // Agent 工具（高级工具）
-    registry.register(Arc::new(ReviewerAgentTool::new()));
+    registry
+}
+
+/// 创建带 Agent 执行器的完整工具注册表
+pub fn create_default_tools_with_agent(executor: Arc<dyn AgentExecutor>) -> ToolRegistry {
+    let mut registry = create_default_tools();
+    registry.register(Arc::new(ReviewerAgentTool::with_executor(executor)));
     registry
 }

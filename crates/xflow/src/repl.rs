@@ -7,8 +7,7 @@ use rustyline::validate::{ValidationContext, ValidationResult, Validator};
 use rustyline::{Cmd, Completer, Editor, Helper, Highlighter, Hinter, KeyCode, KeyEvent, Modifiers};
 use std::path::Path;
 use std::sync::Arc;
-use xflow_core::{CliAdapter, InterruptInfo, Session};
-use xflow_model::ModelProvider;
+use xflow_core::{CliAdapter, InterruptInfo, ModelProvider, Session};
 
 // ── rustyline Helper：支持多行编辑 ──────────────────────────────
 

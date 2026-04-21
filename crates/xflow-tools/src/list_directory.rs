@@ -35,7 +35,7 @@ impl Tool for ListDirectoryTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "list_directory",
-            description: "列出目录内容。参数: path - 目录路径，默认为当前目录",
+            description: "List directory contents. Param: path - directory path, defaults to current directory",
             category: ToolCategory::File,
             danger_level: 0,
             display: ToolDisplayConfig {
@@ -53,7 +53,7 @@ impl Tool for ListDirectoryTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "要列出的目录路径，默认为当前目录"
+                    "description": "Directory path to list, defaults to current directory"
                 }
             },
             "required": []

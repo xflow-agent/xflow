@@ -43,7 +43,7 @@ impl Tool for EditFileTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "edit_file",
-            description: "编辑文件内容。参数: path - 文件路径, old_string - 要替换的旧内容（必须精确匹配）, new_string - 新内容。用于精确修改文件的特定部分。",
+            description: "Edit file contents. Params: path - file path, old_string - content to replace (must match exactly), new_string - new content. Used for precise modifications to specific parts of a file.",
             category: ToolCategory::File,
             danger_level: 1,
             display: ToolDisplayConfig {
@@ -61,15 +61,15 @@ impl Tool for EditFileTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "要编辑的文件路径"
+                    "description": "File path to edit"
                 },
                 "old_string": {
                     "type": "string",
-                    "description": "要替换的旧内容（必须精确匹配，包括空格和换行）"
+                    "description": "Old content to replace (must match exactly, including whitespace and newlines)"
                 },
                 "new_string": {
                     "type": "string",
-                    "description": "新内容"
+                    "description": "New content"
                 }
             },
             "required": ["path", "old_string", "new_string"]

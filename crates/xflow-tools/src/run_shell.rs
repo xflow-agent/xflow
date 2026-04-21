@@ -234,7 +234,7 @@ impl Tool for RunShellTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "run_shell",
-            description: "执行 Shell 命令。参数: command - 要执行的命令, workdir - 可选的工作目录, timeout - 超时秒数(默认30)。返回命令的标准输出和标准错误。",
+            description: "Execute a shell command. Params: command - command to run, workdir - optional working directory, timeout - timeout in seconds (default 30). Returns stdout and stderr.",
             category: ToolCategory::Shell,
             danger_level: 2,
             display: ToolDisplayConfig {
@@ -252,15 +252,15 @@ impl Tool for RunShellTool {
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "要执行的 Shell 命令"
+                    "description": "Shell command to execute"
                 },
                 "workdir": {
                     "type": "string",
-                    "description": "可选的工作目录"
+                    "description": "Optional working directory"
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "超时时间（秒）",
+                    "description": "Timeout in seconds",
                     "default": 30
                 }
             },

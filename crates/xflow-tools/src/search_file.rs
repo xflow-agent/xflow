@@ -42,7 +42,7 @@ impl Tool for SearchFileTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "search_file",
-            description: "在文件中搜索内容。参数: pattern - 搜索模式（支持正则），path - 搜索路径（可选，默认当前目录），ignore_case - 是否忽略大小写",
+            description: "Search for content in files. Params: pattern - search pattern (supports regex), path - search path (optional, defaults to current directory), ignore_case - case insensitive search",
             category: ToolCategory::Search,
             danger_level: 0,
             display: ToolDisplayConfig {
@@ -60,15 +60,15 @@ impl Tool for SearchFileTool {
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "搜索模式（支持正则表达式）"
+                    "description": "Search pattern (supports regex)"
                 },
                 "path": {
                     "type": "string",
-                    "description": "搜索路径（文件或目录，默认当前目录）"
+                    "description": "Search path (file or directory, defaults to current directory)"
                 },
                 "ignore_case": {
                     "type": "boolean",
-                    "description": "是否忽略大小写"
+                    "description": "Case insensitive search"
                 }
             },
             "required": ["pattern"]

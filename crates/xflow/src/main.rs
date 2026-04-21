@@ -11,7 +11,7 @@ use tracing::info;
 mod repl;
 
 use repl::Repl;
-use xflow_model::{ModelProvider, OpenAIProvider};
+use xflow_core::{ModelProvider, OpenAIProvider};
 
 /// xflow - 心流 AI 编程助手
 #[derive(Parser, Debug)]

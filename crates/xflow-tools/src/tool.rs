@@ -1,37 +1,28 @@
-//! 工具 Trait 定义
+//! Tool Trait definitions
 
 use async_trait::async_trait;
-use serde::Deserialize;
 use serde_json::Value;
 pub use xflow_model::{FunctionDefinition, ToolDefinition};
 
-/// 工具类别
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolCategory {
-    /// 文件操作
     File,
-    /// Git 操作
     Git,
-    /// Shell 命令
     Shell,
-    /// 搜索
     Search,
-    /// Agent 工具
     Agent,
-    /// 其他
     Other,
 }
 
 impl ToolCategory {
-    /// 获取显示名称
     pub fn display_name(&self) -> &'static str {
         match self {
-            ToolCategory::File => "文件工具",
-            ToolCategory::Git => "Git 工具",
-            ToolCategory::Shell => "Shell 工具",
-            ToolCategory::Search => "搜索工具",
-            ToolCategory::Agent => "Agent 工具",
-            ToolCategory::Other => "其他工具",
+            ToolCategory::File => "File",
+            ToolCategory::Git => "Git",
+            ToolCategory::Shell => "Shell",
+            ToolCategory::Search => "Search",
+            ToolCategory::Agent => "Agent",
+            ToolCategory::Other => "Other",
         }
     }
 }
@@ -88,35 +79,6 @@ pub struct ToolMetadata {
     pub danger_level: u8,
     /// 展示配置
     pub display: ToolDisplayConfig,
-}
-
-/// 工具调用请求
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ToolCall {
-    /// 调用 ID
-    pub id: String,
-    /// 工具类型
-    #[serde(rename = "type")]
-    pub call_type: String,
-    /// 函数调用信息
-    pub function: FunctionCall,
-}
-
-/// 函数调用
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct FunctionCall {
-    /// 函数名称
-    pub name: String,
-    /// 参数（JSON 字符串）
-    pub arguments: String,
-}
-
-impl ToolCall {
-    /// 解析参数为指定类型
-    pub fn parse_args<T: for<'de> Deserialize<'de>>(&self) -> anyhow::Result<T> {
-        let args: T = serde_json::from_str(&self.function.arguments)?;
-        Ok(args)
-    }
 }
 
 /// 确认请求
@@ -212,7 +174,7 @@ pub trait Tool: Send + Sync {
                     .take(meta.display.max_preview_lines)
                     .collect::<Vec<_>>()
                     .join("\n");
-                (format!("{} ({} 行)", preview, lines), result.len())
+                (format!("{} ({} lines)", preview, lines), result.len())
             }
             ResultDisplayType::ByteSize => (format_size(result.len()), result.len()),
             ResultDisplayType::StatusOnly => (String::new(), result.len()),
@@ -249,11 +211,11 @@ pub trait Tool: Send + Sync {
         }
 
         // 默认使用参数 JSON 作为消息
-        let message = format!("执行 {} 工具\n参数: {}", meta.name, args);
+        let message = format!("Execute tool: {}\nArgs: {}", meta.name, args);
 
         let req = ToolConfirmationRequest::new(message).with_danger(
             meta.danger_level,
-            format!("危险等级: {}", meta.danger_level),
+            format!("Danger level: {}", meta.danger_level),
         );
 
         Some(req)

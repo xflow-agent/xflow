@@ -24,5 +24,3 @@ tracing.workspace = true
 
 # 内部依赖
 xflow-model = { path = "../xflow-model" }
-xflow-tools = { path = "../xflow-tools" }
-xflow-context = { path = "../xflow-context" }

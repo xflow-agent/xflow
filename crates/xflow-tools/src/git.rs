@@ -1,6 +1,6 @@
-//! Git 工具实现
+//! Git tool implementations
 //!
-//! 提供 git_status, git_diff, git_log, git_commit 工具
+//! Provides git_status, git_diff, git_log, git_commit tools
 
 use crate::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
 use async_trait::async_trait;
@@ -123,7 +123,7 @@ impl Tool for GitStatusTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "git_status",
-            description: "查看 Git 仓库状态，显示工作目录和暂存区的文件状态。返回当前分支、已修改文件、未跟踪文件等信息。",
+            description: "View Git repository status, showing working directory and staging area file status. Returns current branch, modified files, untracked files, etc.",
             category: ToolCategory::Git,
             danger_level: 0,
             display: ToolDisplayConfig {
@@ -141,11 +141,11 @@ impl Tool for GitStatusTool {
             "properties": {
                 "workdir": {
                     "type": "string",
-                    "description": "工作目录路径，默认为当前目录"
+                    "description": "Working directory path, defaults to current directory"
                 },
                 "short": {
                     "type": "boolean",
-                    "description": "是否使用简短格式输出，默认 false"
+                    "description": "Use short format output, default false"
                 }
             }
         })
@@ -209,7 +209,7 @@ impl Tool for GitDiffTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "git_diff",
-            description: "查看 Git 差异，显示文件的具体更改内容。可以查看未暂存的更改、暂存区的更改，或两个提交之间的差异。",
+            description: "View Git diff, showing specific file changes. Can view unstaged changes, staged changes, or diff between two commits.",
             category: ToolCategory::Git,
             danger_level: 0,
             display: ToolDisplayConfig {
@@ -227,19 +227,19 @@ impl Tool for GitDiffTool {
             "properties": {
                 "workdir": {
                     "type": "string",
-                    "description": "工作目录路径，默认为当前目录"
+                    "description": "Working directory path, defaults to current directory"
                 },
                 "file": {
                     "type": "string",
-                    "description": "要查看差异的文件路径（可选）"
+                    "description": "File path to view diff for (optional)"
                 },
                 "staged": {
                     "type": "boolean",
-                    "description": "是否显示暂存区的更改，默认 false"
+                    "description": "Show staged changes, default false"
                 },
                 "commit": {
                     "type": "string",
-                    "description": "提交哈希比较，如 'HEAD~1' 或 'main..feature'"
+                    "description": "Commit hash comparison, e.g. 'HEAD~1' or 'main..feature'"
                 }
             }
         })
@@ -315,7 +315,7 @@ impl Tool for GitLogTool {
         ToolMetadata {
             name: "git_log",
             description:
-                "查看 Git 提交历史日志。显示最近的提交记录，包括提交哈希、作者、日期和提交消息。",
+                "View Git commit history log. Shows recent commits including hash, author, date, and message.",
             category: ToolCategory::Git,
             danger_level: 0,
             display: ToolDisplayConfig {
@@ -333,19 +333,19 @@ impl Tool for GitLogTool {
             "properties": {
                 "workdir": {
                     "type": "string",
-                    "description": "工作目录路径，默认为当前目录"
+                    "description": "Working directory path, defaults to current directory"
                 },
                 "count": {
                     "type": "integer",
-                    "description": "显示的提交数量，默认 10"
+                    "description": "Number of commits to show, default 10"
                 },
                 "file": {
                     "type": "string",
-                    "description": "只显示该文件的提交历史（可选）"
+                    "description": "Only show commits for this file (optional)"
                 },
                 "oneline": {
                     "type": "boolean",
-                    "description": "是否使用单行格式，默认 true"
+                    "description": "Use one-line format, default true"
                 }
             }
         })
@@ -425,7 +425,7 @@ impl Tool for GitCommitTool {
         ToolMetadata {
             name: "git_commit",
             description:
-                "创建 Git 提交。可以选择先添加所有更改的文件，然后创建提交。此操作需要用户确认。",
+                "Create a Git commit. Optionally add all changed files first. Requires user confirmation.",
             category: ToolCategory::Git,
             danger_level: 1,
             display: ToolDisplayConfig {
@@ -443,15 +443,15 @@ impl Tool for GitCommitTool {
             "properties": {
                 "message": {
                     "type": "string",
-                    "description": "提交消息"
+                    "description": "Commit message"
                 },
                 "workdir": {
                     "type": "string",
-                    "description": "工作目录路径，默认为当前目录"
+                    "description": "Working directory path, defaults to current directory"
                 },
                 "add_all": {
                     "type": "boolean",
-                    "description": "是否先执行 git add . 添加所有更改，默认 true"
+                    "description": "Whether to run git add . first, default true"
                 }
             },
             "required": ["message"]
@@ -527,7 +527,7 @@ impl Tool for GitAddTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "git_add",
-            description: "将文件添加到 Git 暂存区。可以添加指定文件或所有更改的文件。",
+            description: "Add files to Git staging area. Can add specific files or all changed files.",
             category: ToolCategory::Git,
             danger_level: 0,
             display: ToolDisplayConfig {
@@ -546,11 +546,11 @@ impl Tool for GitAddTool {
                 "files": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "要添加的文件路径列表。使用 \".\" 添加所有更改"
+                    "description": "File paths to add. Use \".\" to add all changes"
                 },
                 "workdir": {
                     "type": "string",
-                    "description": "工作目录路径，默认为当前目录"
+                    "description": "Working directory path, defaults to current directory"
                 }
             },
             "required": ["files"]
@@ -626,7 +626,7 @@ impl Tool for GitBranchTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "git_branch",
-            description: "管理 Git 分支。可以列出、创建或删除分支。",
+            description: "Manage Git branches. Can list, create, or delete branches.",
             category: ToolCategory::Git,
             danger_level: 1,
             display: ToolDisplayConfig {
@@ -645,15 +645,15 @@ impl Tool for GitBranchTool {
                 "action": {
                     "type": "string",
                     "enum": ["list", "create", "delete", "current"],
-                    "description": "操作类型：list=列出所有分支，create=创建新分支，delete=删除分支，current=显示当前分支"
+                    "description": "Action type: list=all branches, create=new branch, delete=delete branch, current=show current branch"
                 },
                 "name": {
                     "type": "string",
-                    "description": "分支名称（create/delete 操作时需要）"
+                    "description": "Branch name (required for create/delete)"
                 },
                 "workdir": {
                     "type": "string",
-                    "description": "工作目录路径，默认为当前目录"
+                    "description": "Working directory path, defaults to current directory"
                 }
             },
             "required": ["action"]

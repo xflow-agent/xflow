@@ -2927,9 +2927,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "xflow-agent",
  "xflow-core",
- "xflow-model",
 ]
 
 [[package]]
@@ -2943,9 +2941,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
- "xflow-context",
  "xflow-model",
- "xflow-tools",
 ]
 
 [[package]]
@@ -3019,11 +3015,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
- "xflow-agent",
- "xflow-context",
  "xflow-core",
- "xflow-model",
- "xflow-tools",
 ]
 
 [[package]]

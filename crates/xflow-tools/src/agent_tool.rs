@@ -1,30 +1,30 @@
-//! Agent 工具实现
-//!
-//! 将 Agent 包装成 Tool，让主对话 AI 可以自主调用
-
+use super::agent_executor::AgentExecutor;
 use super::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tracing::info;
 
-/// Reviewer Agent 参数
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ReviewerAgentArgs {
-    /// 任务描述
     pub task: String,
-    /// 可选：相关文件列表
     #[serde(default)]
     pub files: Vec<String>,
 }
 
-/// Reviewer Agent 工具
-///
-/// 用于代码分析、审查、理解项目等任务
-pub struct ReviewerAgentTool;
+pub struct ReviewerAgentTool {
+    executor: Option<Arc<dyn AgentExecutor>>,
+}
 
 impl ReviewerAgentTool {
     pub fn new() -> Self {
-        Self
+        Self { executor: None }
+    }
+
+    pub fn with_executor(executor: Arc<dyn AgentExecutor>) -> Self {
+        Self {
+            executor: Some(executor),
+        }
     }
 }
 
@@ -39,7 +39,7 @@ impl Tool for ReviewerAgentTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "reviewer_agent",
-            description: "【重要】项目分析工具。当用户要求'分析项目'、'分析功能'、'分析架构'、'了解项目结构'等时，**必须**调用此工具，不要直接使用 read_file。此工具会启动 ReviewerAgent 执行完整的多步骤分析流程（自动读取配置、分析模块、生成报告）。参数: task - 分析任务描述。",
+            description: "Project analysis tool. Use this when the user asks to 'analyze project', 'analyze features', 'analyze architecture', 'understand project structure', etc. This tool launches a ReviewerAgent that performs a complete multi-step analysis (reads config, analyzes modules, generates report). Parameter: task - analysis task description.",
             category: ToolCategory::Agent,
             danger_level: 0,
             display: ToolDisplayConfig {
@@ -57,33 +57,30 @@ impl Tool for ReviewerAgentTool {
             "properties": {
                 "task": {
                     "type": "string",
-                    "description": "分析任务描述，如'分析项目所有功能'或'分析项目架构'"
+                    "description": "Analysis task description, e.g. 'analyze all project features' or 'analyze project architecture'"
                 }
             },
             "required": ["task"]
         })
     }
 
-    async fn execute(&self, args: serde_json::Value, _workdir: &std::path::Path) -> anyhow::Result<String> {
+    async fn execute(
+        &self,
+        args: serde_json::Value,
+        _workdir: &std::path::Path,
+    ) -> anyhow::Result<String> {
         let params: ReviewerAgentArgs =
-            serde_json::from_value(args).map_err(|e| anyhow::anyhow!("参数解析失败: {}", e))?;
+            serde_json::from_value(args).map_err(|e| anyhow::anyhow!("Failed to parse args: {}", e))?;
 
         info!("Reviewer agent task: {}", params.task);
 
-        Ok(format!(
-            "Starting analysis task: {}\n\nI will follow these steps:\n1. Read project config files (Cargo.toml, README.md)\n2. Analyze project entry files and module structure\n3. Deep-dive into each module's implementation\n4. Synthesize findings into a complete report\n\nStarting step 1: reading project config...",
-            params.task
-        ))
-    }
-
-    fn definition(&self) -> super::tool::ToolDefinition {
-        super::tool::ToolDefinition {
-            tool_type: "function".to_string(),
-            function: super::tool::FunctionDefinition {
-                name: self.name().to_string(),
-                description: self.description().to_string(),
-                parameters: self.parameters_schema(),
-            },
+        if let Some(ref executor) = self.executor {
+            Ok(executor.execute_agent("reviewer_agent", serde_json::to_value(&params)?).await)
+        } else {
+            Ok(format!(
+                "Starting analysis task: {}\n\nNo agent executor configured. Analysis will be performed by the main conversation loop.",
+                params.task
+            ))
         }
     }
 }

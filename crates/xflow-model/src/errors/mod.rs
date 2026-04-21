@@ -35,8 +35,8 @@ impl UserFriendlyError {
 
     pub fn to_display_string(&self) -> String {
         match &self.suggestion {
-            Some(s) => format!("Error: {} ({})", self.message, s),
-            None => format!("Error: {}", self.message),
+            Some(s) => format!("错误: {} ({})", self.message, s),
+            None => format!("错误: {}", self.message),
         }
     }
 }
@@ -45,18 +45,18 @@ impl From<std::io::Error> for UserFriendlyError {
     fn from(err: std::io::Error) -> Self {
         match err.kind() {
             std::io::ErrorKind::NotFound => {
-                Self::new("File not found").with_suggestion("check the file path")
+                Self::new("文件未找到").with_suggestion("请检查文件路径")
             }
             std::io::ErrorKind::PermissionDenied => {
-                Self::new("Permission denied").with_suggestion("check file permissions")
+                Self::new("权限不足").with_suggestion("请检查文件权限")
             }
             std::io::ErrorKind::InvalidInput => {
-                Self::new("Invalid input").with_suggestion("check the input parameters")
+                Self::new("输入无效").with_suggestion("请检查输入参数")
             }
             std::io::ErrorKind::TimedOut => {
-                Self::new("Operation timed out").with_suggestion("try again later")
+                Self::new("操作超时").with_suggestion("请稍后重试")
             }
-            _ => Self::new("IO error").with_suggestion("check if the file is accessible"),
+            _ => Self::new("IO 错误").with_suggestion("请检查文件是否可访问"),
         }
     }
 }
@@ -82,19 +82,19 @@ mod tests {
     fn test_io_error_to_user_friendly() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
         let user_err: UserFriendlyError = io_err.into();
-        assert_eq!(user_err.message, "File not found");
+        assert_eq!(user_err.message, "文件未找到");
         assert!(user_err.suggestion.is_some());
     }
 
     #[test]
     fn test_display_string() {
-        let err = UserFriendlyError::new("File not found").with_suggestion("check path");
-        assert_eq!(err.to_display_string(), "Error: File not found (check path)");
+        let err = UserFriendlyError::new("文件未找到").with_suggestion("请检查文件路径");
+        assert_eq!(err.to_display_string(), "错误: 文件未找到 (请检查文件路径)");
     }
 
     #[test]
     fn test_display_string_no_suggestion() {
-        let err = UserFriendlyError::new("IO error");
-        assert_eq!(err.to_display_string(), "Error: IO error");
+        let err = UserFriendlyError::new("IO 错误");
+        assert_eq!(err.to_display_string(), "错误: IO 错误");
     }
 }

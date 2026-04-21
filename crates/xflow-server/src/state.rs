@@ -5,8 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
-use xflow_core::{AutoConfirmAdapter, Session};
-use xflow_model::ModelProvider;
+use xflow_core::{AutoConfirmAdapter, ModelProvider, Session};
 
 /// 会话 ID
 pub type SessionId = Uuid;

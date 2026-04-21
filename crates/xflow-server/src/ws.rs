@@ -295,7 +295,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, query: WsQuery) 
                                     };
 
                                     match result {
-                                        Ok(()) => {
+                                        Ok(_) => {
                                             let _ = done_tx_clone.send(ProcessDone::Ok);
                                         }
                                         Err(e) => {

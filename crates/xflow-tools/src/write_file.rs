@@ -91,11 +91,11 @@ impl Tool for WriteFileTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "要写入的文件路径"
+                    "description": "File path to write"
                 },
                 "content": {
                     "type": "string",
-                    "description": "要写入的文件内容"
+                    "description": "Content to write to the file"
                 }
             },
             "required": ["path", "content"]

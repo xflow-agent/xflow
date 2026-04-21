@@ -15,7 +15,7 @@ use tower_http::{
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use xflow_model::{ModelProvider, OpenAIProvider};
+use xflow_core::{ModelProvider, OpenAIProvider};
 use xflow_server::{create_api_router, create_ws_router, AppState};
 
 /// xflow Web API 服务器
