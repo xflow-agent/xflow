@@ -100,7 +100,6 @@ pub fn analyze_command(cmd: &str) -> DangerAnalysis {
         ("rm -rf / ", "可能删除整个系统"),
         ("rm -rf /\"", "可能删除整个系统"),
         ("rm -rf /*", "可能删除整个系统"),
-        ("rm -rf /", "可能删除整个系统"), // 规范化后匹配
         ("mkfs", "格式化磁盘"),
         ("fdisk", "磁盘分区操作"),
         ("dd if=", "磁盘镜像操作"),
@@ -296,7 +295,7 @@ impl Tool for RunShellTool {
         Some(req)
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: RunShellArgs = serde_json::from_value(args)?;
 
         // 执行危险命令分析（用于审计日志和额外安全层）
@@ -318,7 +317,9 @@ impl Tool for RunShellTool {
         cmd.arg("-c").arg(&params.command);
 
         // 设置工作目录
-        if let Some(workdir) = &params.workdir {
+        if let Some(workdir_arg) = &params.workdir {
+            cmd.current_dir(workdir_arg);
+        } else {
             cmd.current_dir(workdir);
         }
 
@@ -357,20 +358,20 @@ impl Tool for RunShellTool {
                 }
 
                 if result.is_empty() {
-                    result = format!("命令执行完成 (退出码: {})", exit_code);
+                    result = format!("Command completed (exit code: {})", exit_code);
                 } else {
-                    result.push_str(&format!("\n[退出码: {}]", exit_code));
+                    result.push_str(&format!("\n[exit code: {}]", exit_code));
                 }
 
                 Ok(result)
             }
             Ok(Err(e)) => {
-                warn!("命令执行失败: {:?}", e);
-                Ok(format!("错误: 无法执行命令: {}", e))
+                warn!("Command execution failed: {:?}", e);
+                Ok(format!("Error: cannot execute command: {}", e))
             }
             Err(_) => {
-                warn!("命令执行超时");
-                Ok(format!("错误: 命令执行超时 (超过 {} 秒)", params.timeout))
+                warn!("Command execution timeout");
+                Ok(format!("Error: command timed out ({} seconds)", params.timeout))
             }
         }
     }

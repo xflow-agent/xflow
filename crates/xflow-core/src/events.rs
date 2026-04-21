@@ -21,9 +21,8 @@ pub enum XflowEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OutputEvent {
-    /// 开始思考
     ThinkingStart,
-    /// 思考内容（流式）
+    ThinkingDot,
     ThinkingContent { text: String },
     /// 正式回复内容（流式）
     Content { text: String },

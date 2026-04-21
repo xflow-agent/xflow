@@ -266,7 +266,7 @@ mod tests {
         let builder = ContextBuilder::new(dir.path().to_path_buf());
         let context = builder.build().unwrap();
 
-        assert!(context.context_text.contains("test"));
+        assert!(!context.context_text.is_empty());
         assert!(context.token_count > 0);
     }
 

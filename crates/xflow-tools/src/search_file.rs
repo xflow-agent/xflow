@@ -1,9 +1,11 @@
-//! search_file 工具实现 (使用 ripgrep)
+//! search_file 工具实现 (内置搜索)
 
 use super::tool::{ResultDisplayType, Tool, ToolCategory, ToolDisplayConfig, ToolMetadata};
 use async_trait::async_trait;
+use ignore::WalkBuilder;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::path::PathBuf;
 use tracing::debug;
 
 /// search_file 工具参数
@@ -40,7 +42,7 @@ impl Tool for SearchFileTool {
     fn metadata(&self) -> ToolMetadata {
         ToolMetadata {
             name: "search_file",
-            description: "在文件中搜索内容（使用 ripgrep）。参数: pattern - 搜索模式（支持正则），path - 搜索路径（可选，默认当前目录），ignore_case - 是否忽略大小写",
+            description: "在文件中搜索内容。参数: pattern - 搜索模式（支持正则），path - 搜索路径（可选，默认当前目录），ignore_case - 是否忽略大小写",
             category: ToolCategory::Search,
             danger_level: 0,
             display: ToolDisplayConfig {
@@ -73,7 +75,7 @@ impl Tool for SearchFileTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: SearchFileArgs = serde_json::from_value(args)?;
 
         debug!(
@@ -81,69 +83,89 @@ impl Tool for SearchFileTool {
             params.pattern, params.path
         );
 
-        // 构建 rg 命令
-        let mut cmd = Command::new("rg");
+        // 编译正则表达式
+        let regex = if params.ignore_case {
+            Regex::new(&format!("(?i){}", params.pattern))
+        } else {
+            Regex::new(&params.pattern)
+        };
 
-        cmd.arg(&params.pattern);
-
-        if let Some(path) = &params.path {
-            cmd.arg(path);
-        }
-
-        if params.ignore_case {
-            cmd.arg("-i");
-        }
-
-        // 添加输出格式选项
-        cmd.arg("--line-number") // 显示行号
-            .arg("--color=never") // 禁用颜色
-            .arg("-n"); // 简洁格式
-
-        // 执行命令
-        let output = match cmd.output() {
-            Ok(o) => o,
+        let regex = match regex {
+            Ok(r) => r,
             Err(e) => {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    return Ok("错误: 未找到 ripgrep (rg) 命令，请确保已安装".to_string());
-                }
-                return Ok(format!("错误: 执行搜索失败: {}", e));
+                return Ok(format!("Error: invalid regex: {}", e));
             }
         };
 
-        // 处理结果
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let lines: Vec<&str> = stdout.lines().collect();
-
-            if lines.is_empty() {
-                return Ok("未找到匹配项".to_string());
-            }
-
-            let mut result = format!("找到 {} 处匹配:\n", lines.len());
-            result.push_str("---\n");
-
-            // 限制输出行数
-            let max_lines = 50;
-            for line in lines.iter().take(max_lines) {
-                result.push_str(&format!("{}\n", line));
-            }
-
-            if lines.len() > max_lines {
-                result.push_str(&format!(
-                    "... 还有 {} 行结果未显示\n",
-                    lines.len() - max_lines
-                ));
-            }
-
-            Ok(result)
-        } else {
-            // rg 返回非 0 可能是没有匹配项
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.is_empty() {
-                Ok("未找到匹配项".to_string())
+        // 确定搜索路径
+        let search_path = if let Some(path) = &params.path {
+            if PathBuf::from(path).is_absolute() {
+                PathBuf::from(path)
             } else {
-                Ok(format!("错误: {}", stderr))
+                workdir.join(path)
+            }
+        } else {
+            workdir.to_path_buf()
+        };
+
+        // 检查路径是否存在
+        if !search_path.exists() {
+            return Ok(format!("Error: search path not found: {}", search_path.display()));
+        }
+
+        // 收集搜索结果
+        let mut matches = Vec::new();
+        
+        // 使用 ignore crate 遍历文件
+        let walker = WalkBuilder::new(&search_path)
+            .standard_filters(true)
+            .build();
+
+        for entry in walker {
+            match entry {
+                Ok(entry) => {
+                    let path = entry.path().to_path_buf();
+                    if path.is_file() {
+                        // 尝试读取文件内容
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            // 逐行搜索
+                            for (line_num, line) in content.lines().enumerate() {
+                                if regex.is_match(line) {
+                                    let relative_path = path.strip_prefix(workdir)
+                                        .unwrap_or(&path)
+                                        .to_path_buf();
+                                    matches.push((relative_path, line_num + 1, line.to_string()));
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!("搜索错误: {}", e);
+                }
             }
         }
+
+        // 处理结果
+        if matches.is_empty() {
+            return Ok("No matches found".to_string());
+        }
+
+        let mut result = format!("Found {} matches:\n", matches.len());
+        result.push_str("---\n");
+
+        let max_lines = 50;
+        for (path, line_num, line) in matches.iter().take(max_lines) {
+            result.push_str(&format!("{}:{}:{}\n", path.display(), line_num, line));
+        }
+
+        if matches.len() > max_lines {
+            result.push_str(&format!(
+                "... {} more results not shown\n",
+                matches.len() - max_lines
+            ));
+        }
+
+        Ok(result)
     }
 }

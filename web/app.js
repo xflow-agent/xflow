@@ -106,6 +106,10 @@ class XflowApp {
                 this.showThinking();
                 break;
                 
+            case 'thinking_dot':
+                this.updateThinkingDots();
+                break;
+                
             case 'thinking_content':
                 this.appendThinkingContent(data.text);
                 break;
@@ -416,23 +420,37 @@ class XflowApp {
     showThinking() {
         const bubble = document.getElementById('streaming-bubble');
         if (bubble) {
-            // 重置思考内容变量（新思考阶段开始）
             this.thinkingContent = '';
+            this.thinkingDotCount = 0;
             
-            // 如果已有内容（工具调用后），添加分隔
             const hasContent = bubble.children.length > 0;
             
             const indicator = document.createElement('div');
             indicator.className = 'thinking-indicator';
             if (hasContent) {
-                // 添加分隔，确保在新行显示
                 const spacer = document.createElement('div');
                 spacer.style.marginTop = '12px';
                 bubble.appendChild(spacer);
             }
-            indicator.innerHTML = `<span class="thinking-icon">✻</span> <span class="thinking-text">思考中...</span>`;
+            indicator.innerHTML = `<span class="thinking-icon">✻</span> <span class="thinking-text">Thinking...</span>`;
             bubble.appendChild(indicator);
             this.scrollToBottom();
+        }
+    }
+    
+    updateThinkingDots() {
+        const bubble = document.getElementById('streaming-bubble');
+        if (!bubble) return;
+        
+        const indicators = bubble.querySelectorAll('.thinking-indicator');
+        const indicator = indicators.length > 0 ? indicators[indicators.length - 1] : null;
+        if (!indicator) return;
+        
+        this.thinkingDotCount = ((this.thinkingDotCount || 0) + 1) % 4;
+        const dots = '.'.repeat(this.thinkingDotCount);
+        const textEl = indicator.querySelector('.thinking-text');
+        if (textEl) {
+            textEl.textContent = 'Thinking' + dots;
         }
     }
     

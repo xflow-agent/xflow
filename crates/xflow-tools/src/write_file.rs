@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::{debug, warn};
+use xflow_model::format_io_error;
 
 /// 敏感路径前缀列表（禁止写入）
 const SENSITIVE_WRITE_PATHS: &[&str] = &[
@@ -77,9 +78,9 @@ impl Tool for WriteFileTool {
             danger_level: 1,
             display: ToolDisplayConfig {
                 primary_param: "path",
-                result_display: ResultDisplayType::Full,
-                max_preview_lines: 20,
-                max_preview_chars: 1000,
+                result_display: ResultDisplayType::StatusOnly,
+                max_preview_lines: 5,
+                max_preview_chars: 200,
             },
         }
     }
@@ -143,29 +144,36 @@ impl Tool for WriteFileTool {
         Some(req)
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: WriteFileArgs = serde_json::from_value(args)?;
-        let path = PathBuf::from(&params.path);
 
-        debug!("写入文件: {:?}", path);
+        debug!("写入文件: {}", params.path);
 
         // 安全检查：目录遍历攻击
         if has_path_traversal(&params.path) {
-            warn!("检测到目录遍历攻击尝试: {}", params.path);
-            return Ok(format!("错误: 路径包含非法字符: {}", params.path));
+            warn!("Path traversal detected: {}", params.path);
+            return Ok(format!("Error: invalid path: {}", params.path));
         }
+
+        // 规范化路径
+        let path = if PathBuf::from(&params.path).is_absolute() {
+            PathBuf::from(&params.path)
+        } else {
+            workdir.join(&params.path)
+        };
+
+        debug!("规范化后路径: {:?}", path);
 
         // 安全检查：敏感路径
         if is_sensitive_path(&path) {
-            warn!("尝试写入敏感路径: {:?}", path);
-            return Ok(format!("错误: 拒绝写入敏感路径: {}", params.path));
+            warn!("Attempt to write sensitive path: {:?}", path);
+            return Ok(format!("Error: access denied for sensitive path: {}", params.path));
         }
 
-        // 安全检查：文件大小限制
         if params.content.len() > MAX_FILE_SIZE {
-            warn!("文件内容超过大小限制: {} 字节", params.content.len());
+            warn!("File content exceeds size limit: {} bytes", params.content.len());
             return Ok(format!(
-                "错误: 文件内容超过最大限制 ({} MB)",
+                "Error: content exceeds max size limit ({} MB)",
                 MAX_FILE_SIZE / 1024 / 1024
             ));
         }
@@ -183,15 +191,15 @@ impl Tool for WriteFileTool {
             Ok(_) => {
                 let lines = params.content.lines().count();
                 Ok(format!(
-                    "成功写入文件: {} ({} 行, {} 字节)",
+                    "Written: {} ({} lines, {} bytes)",
                     params.path,
                     lines,
                     params.content.len()
                 ))
             }
             Err(e) => {
-                warn!("写入文件失败: {:?}", e);
-                Ok(format!("错误: 无法写入文件 {}: {}", params.path, e))
+                warn!("Failed to write file: {:?}", e);
+                Ok(format_io_error(&e))
             }
         }
     }

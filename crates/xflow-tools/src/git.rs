@@ -75,15 +75,12 @@ struct GitCommitArgs {
 }
 
 /// 执行 git 命令的辅助函数（异步版本）
-async fn run_git(args: &[&str], workdir: Option<&str>) -> anyhow::Result<String> {
+async fn run_git(args: &[&str], workdir: &std::path::Path) -> anyhow::Result<String> {
     let mut cmd = Command::new("git");
     cmd.args(args);
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
-
-    if let Some(dir) = workdir {
-        cmd.current_dir(dir);
-    }
+    cmd.current_dir(workdir);
 
     let output = cmd.output().await?;
 
@@ -91,12 +88,12 @@ async fn run_git(args: &[&str], workdir: Option<&str>) -> anyhow::Result<String>
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(anyhow::anyhow!("Git 命令失败: {}", stderr))
+        Err(anyhow::anyhow!("Git command failed: {}", stderr))
     }
 }
 
 /// 检查是否在 git 仓库中（异步版本）
-async fn is_git_repo(workdir: Option<&str>) -> bool {
+async fn is_git_repo(workdir: &std::path::Path) -> bool {
     run_git(&["rev-parse", "--is-inside-work-tree"], workdir)
         .await
         .is_ok()
@@ -154,13 +151,23 @@ impl Tool for GitStatusTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: GitStatusArgs = serde_json::from_value(args)?;
 
-        let workdir = params.workdir.as_deref();
+        // 使用参数中的workdir或默认的workdir
+        let path_buf = if let Some(wd) = &params.workdir {
+            if std::path::Path::new(wd).is_absolute() {
+                std::path::PathBuf::from(wd)
+            } else {
+                workdir.join(wd)
+            }
+        } else {
+            workdir.to_path_buf()
+        };
+        let actual_workdir = &path_buf;
 
-        if !is_git_repo(workdir).await {
-            return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
+        if !is_git_repo(actual_workdir).await {
+            return Err(anyhow::anyhow!("Not a git repository"));
         }
 
         let args = if params.short {
@@ -169,12 +176,12 @@ impl Tool for GitStatusTool {
             vec!["status"]
         };
 
-        let status = run_git(&args, workdir).await?;
+        let status = run_git(&args, actual_workdir).await?;
 
         // 获取当前分支
-        let branch = run_git(&["branch", "--show-current"], workdir).await?;
+        let branch = run_git(&["branch", "--show-current"], actual_workdir).await?;
 
-        Ok(format!("当前分支: {}\n\n{}", branch.trim(), status.trim()))
+        Ok(format!("Branch: {}\n\n{}", branch.trim(), status.trim()))
     }
 }
 
@@ -238,13 +245,23 @@ impl Tool for GitDiffTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: GitDiffArgs = serde_json::from_value(args)?;
 
-        let workdir = params.workdir.as_deref();
+        // 使用参数中的workdir或默认的workdir
+        let path_buf = if let Some(wd) = &params.workdir {
+            if std::path::Path::new(wd).is_absolute() {
+                std::path::PathBuf::from(wd)
+            } else {
+                workdir.join(wd)
+            }
+        } else {
+            workdir.to_path_buf()
+        };
+        let actual_workdir = &path_buf;
 
-        if !is_git_repo(workdir).await {
-            return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
+        if !is_git_repo(actual_workdir).await {
+            return Err(anyhow::anyhow!("Not a git repository"));
         }
 
         // 构建命令参数
@@ -263,10 +280,10 @@ impl Tool for GitDiffTool {
             git_args.push(file);
         }
 
-        let diff = run_git(&git_args, workdir).await?;
+        let diff = run_git(&git_args, actual_workdir).await?;
 
         if diff.trim().is_empty() {
-            Ok("没有差异".to_string())
+            Ok("No diff".to_string())
         } else {
             Ok(diff)
         }
@@ -334,13 +351,23 @@ impl Tool for GitLogTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: GitLogArgs = serde_json::from_value(args)?;
 
-        let workdir = params.workdir.as_deref();
+        // 使用参数中的workdir或默认的workdir
+        let path_buf = if let Some(wd) = &params.workdir {
+            if std::path::Path::new(wd).is_absolute() {
+                std::path::PathBuf::from(wd)
+            } else {
+                workdir.join(wd)
+            }
+        } else {
+            workdir.to_path_buf()
+        };
+        let actual_workdir = &path_buf;
 
-        if !is_git_repo(workdir).await {
-            return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
+        if !is_git_repo(actual_workdir).await {
+            return Err(anyhow::anyhow!("Not a git repository"));
         }
 
         let mut git_args = vec!["log"];
@@ -361,10 +388,10 @@ impl Tool for GitLogTool {
             git_args.push(file);
         }
 
-        let log = run_git(&git_args, workdir).await?;
+        let log = run_git(&git_args, actual_workdir).await?;
 
         if log.trim().is_empty() {
-            Ok("没有提交历史".to_string())
+            Ok("No commits yet".to_string())
         } else {
             Ok(log)
         }
@@ -431,35 +458,45 @@ impl Tool for GitCommitTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: GitCommitArgs = serde_json::from_value(args)?;
 
-        let workdir = params.workdir.as_deref();
+        // 使用参数中的workdir或默认的workdir
+        let path_buf = if let Some(wd) = &params.workdir {
+            if std::path::Path::new(wd).is_absolute() {
+                std::path::PathBuf::from(wd)
+            } else {
+                workdir.join(wd)
+            }
+        } else {
+            workdir.to_path_buf()
+        };
+        let actual_workdir = &path_buf;
 
-        if !is_git_repo(workdir).await {
-            return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
+        if !is_git_repo(actual_workdir).await {
+            return Err(anyhow::anyhow!("Not a git repository"));
         }
 
         // 检查是否有更改需要提交
-        let status = run_git(&["status", "--porcelain"], workdir).await?;
+        let status = run_git(&["status", "--porcelain"], actual_workdir).await?;
 
         if status.trim().is_empty() {
-            return Ok("没有更改需要提交".to_string());
+            return Ok("No changes to commit".to_string());
         }
 
         // 如果需要，先添加所有更改
         if params.add_all {
-            run_git(&["add", "."], workdir).await?;
+            run_git(&["add", "."], actual_workdir).await?;
         }
 
         // 创建提交
-        let commit_output = run_git(&["commit", "-m", &params.message], workdir).await?;
+        let commit_output = run_git(&["commit", "-m", &params.message], actual_workdir).await?;
 
         // 获取新提交的信息
-        let last_commit = run_git(&["log", "-1", "--oneline"], workdir).await?;
+        let last_commit = run_git(&["log", "-1", "--oneline"], actual_workdir).await?;
 
         Ok(format!(
-            "提交成功！\n{}\n新提交: {}",
+            "Committed!\n{}\nNew commit: {}",
             commit_output.trim(),
             last_commit.trim()
         ))
@@ -520,7 +557,7 @@ impl Tool for GitAddTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         #[derive(Debug, Deserialize)]
         struct GitAddArgs {
             files: Vec<String>,
@@ -529,17 +566,27 @@ impl Tool for GitAddTool {
 
         let params: GitAddArgs = serde_json::from_value(args)?;
 
-        let workdir = params.workdir.as_deref();
+        // 使用参数中的workdir或默认的workdir
+        let path_buf = if let Some(wd) = &params.workdir {
+            if std::path::Path::new(wd).is_absolute() {
+                std::path::PathBuf::from(wd)
+            } else {
+                workdir.join(wd)
+            }
+        } else {
+            workdir.to_path_buf()
+        };
+        let actual_workdir = &path_buf;
 
-        if !is_git_repo(workdir).await {
-            return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
+        if !is_git_repo(actual_workdir).await {
+            return Err(anyhow::anyhow!("Not a git repository"));
         }
 
         let mut all_output = String::new();
 
         for file in &params.files {
-            let output = run_git(&["add", file], workdir).await?;
-            all_output.push_str(&format!("已添加: {}\n", file));
+            let output = run_git(&["add", file], actual_workdir).await?;
+            all_output.push_str(&format!("Added: {}\n", file));
             if !output.trim().is_empty() {
                 all_output.push_str(&output);
                 all_output.push('\n');
@@ -547,8 +594,8 @@ impl Tool for GitAddTool {
         }
 
         // 显示暂存区状态
-        let status = run_git(&["status", "--short"], workdir).await?;
-        all_output.push_str("\n当前暂存区状态:\n");
+        let status = run_git(&["status", "--short"], actual_workdir).await?;
+        all_output.push_str("\nStaged files:\n");
         all_output.push_str(&status);
 
         Ok(all_output)
@@ -613,7 +660,7 @@ impl Tool for GitBranchTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         #[derive(Debug, Deserialize)]
         struct GitBranchArgs {
             action: String,
@@ -623,36 +670,46 @@ impl Tool for GitBranchTool {
 
         let params: GitBranchArgs = serde_json::from_value(args)?;
 
-        let workdir = params.workdir.as_deref();
+        // 使用参数中的workdir或默认的workdir
+        let path_buf = if let Some(wd) = &params.workdir {
+            if std::path::Path::new(wd).is_absolute() {
+                std::path::PathBuf::from(wd)
+            } else {
+                workdir.join(wd)
+            }
+        } else {
+            workdir.to_path_buf()
+        };
+        let actual_workdir = &path_buf;
 
-        if !is_git_repo(workdir).await {
-            return Err(anyhow::anyhow!("当前目录不是 Git 仓库"));
+        if !is_git_repo(actual_workdir).await {
+            return Err(anyhow::anyhow!("Not a git repository"));
         }
 
         match params.action.as_str() {
             "list" => {
-                let branches = run_git(&["branch", "-a"], workdir).await?;
+                let branches = run_git(&["branch", "-a"], actual_workdir).await?;
                 Ok(branches)
             }
             "current" => {
-                let branch = run_git(&["branch", "--show-current"], workdir).await?;
-                Ok(format!("当前分支: {}", branch.trim()))
+                let branch = run_git(&["branch", "--show-current"], actual_workdir).await?;
+                Ok(format!("Current branch: {}", branch.trim()))
             }
             "create" => {
                 let name = params
                     .name
-                    .ok_or_else(|| anyhow::anyhow!("创建分支需要提供分支名称"))?;
-                run_git(&["branch", &name], workdir).await?;
-                Ok(format!("已创建分支: {}", name))
+                    .ok_or_else(|| anyhow::anyhow!("Branch name required for create"))?;
+                run_git(&["branch", &name], actual_workdir).await?;
+                Ok(format!("Created branch: {}", name))
             }
             "delete" => {
                 let name = params
                     .name
-                    .ok_or_else(|| anyhow::anyhow!("删除分支需要提供分支名称"))?;
-                run_git(&["branch", "-d", &name], workdir).await?;
-                Ok(format!("已删除分支: {}", name))
+                    .ok_or_else(|| anyhow::anyhow!("Branch name required for delete"))?;
+                run_git(&["branch", "-d", &name], actual_workdir).await?;
+                Ok(format!("Deleted branch: {}", name))
             }
-            _ => Err(anyhow::anyhow!("未知操作: {}", params.action)),
+            _ => Err(anyhow::anyhow!("Unknown action: {}", params.action)),
         }
     }
 }

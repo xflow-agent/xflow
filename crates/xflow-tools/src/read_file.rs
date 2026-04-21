@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::{debug, warn};
+use xflow_model::format_io_error;
 
 /// 敏感路径前缀列表（禁止访问）
 const SENSITIVE_PATHS: &[&str] = &[
@@ -135,58 +136,57 @@ impl Tool for ReadFileTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: ReadFileArgs = serde_json::from_value(args)?;
 
         debug!("读取文件: {}", params.path);
 
-        // 获取当前工作目录
-        let workdir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-
         // 规范化并验证路径
-        let path = match normalize_and_validate_path(&params.path, &workdir) {
+        let path = match normalize_and_validate_path(&params.path, workdir) {
             Ok(p) => p,
             Err(e) => {
-                warn!("路径验证失败: {} - {}", params.path, e);
-                return Ok(format!("错误: {}", e));
+                warn!("Path validation failed: {} - {}", params.path, e);
+                return Ok(format!("Error: {}", e));
             }
         };
 
-        // 安全检查：敏感路径
         if is_sensitive_path(&path) {
-            warn!("尝试访问敏感路径: {:?}", path);
-            return Ok(format!("错误: 拒绝访问敏感路径: {}", params.path));
+            warn!("Attempt to access sensitive path: {:?}", path);
+            return Ok(format!("Error: access denied for sensitive path: {}", params.path));
         }
 
-        // 检查文件是否存在
         if !path.exists() {
-            warn!("文件不存在: {:?}", path);
-            return Ok(format!("错误: 文件不存在: {}", params.path));
+            return Ok(format!("Error: file not found: {}", params.path));
         }
 
-        // 检查是否为文件
         if !path.is_file() {
-            return Ok(format!("错误: {} 不是文件", params.path));
+            return Ok(format!("Error: {} is not a file", params.path));
         }
 
         // 读取文件内容
         match tokio::fs::read_to_string(&path).await {
             Ok(content) => {
                 let lines = content.lines().count();
-                Ok(format!(
-                    "文件: {} ({} 行)\n---\n{}\n---",
-                    params.path, lines, content
-                ))
+                let bytes = content.len();
+
+                if content.len() > 5000 {
+                    let preview_lines: Vec<&str> = content.lines().take(100).collect();
+                    Ok(format!(
+                        "File: {} ({} lines, {} bytes)\n---\n{}\n...\n[{} more lines]",
+                        params.path, lines, bytes,
+                        preview_lines.join("\n"),
+                        lines.saturating_sub(100)
+                    ))
+                } else {
+                    Ok(format!(
+                        "File: {} ({} lines, {} bytes)\n---\n{}\n---",
+                        params.path, lines, bytes, content
+                    ))
+                }
             }
             Err(e) => {
-                warn!("读取文件失败: {:?}", e);
-                // 清理错误信息，避免泄露内部路径
-                let safe_error = match e.kind() {
-                    std::io::ErrorKind::NotFound => "文件不存在".to_string(),
-                    std::io::ErrorKind::PermissionDenied => "权限不足".to_string(),
-                    _ => "读取失败".to_string(),
-                };
-                Ok(format!("错误: {}", safe_error))
+                warn!("Failed to read file: {:?}", e);
+                Ok(format_io_error(&e))
             }
         }
     }

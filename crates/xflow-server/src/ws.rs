@@ -41,9 +41,8 @@ pub enum WsRequest {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsResponse {
-    /// 思考中状态
     Thinking,
-    /// 思考内容（流式，灰色斜体）
+    ThinkingDot,
     ThinkingContent { text: String },
     /// 文本内容（流式）
     Content { text: String },
@@ -115,6 +114,7 @@ fn event_to_response(event: XflowEvent) -> Option<WsResponse> {
 fn output_to_response(event: OutputEvent) -> WsResponse {
     match event {
         OutputEvent::ThinkingStart => WsResponse::Thinking,
+        OutputEvent::ThinkingDot => WsResponse::ThinkingDot,
         OutputEvent::ThinkingContent { text } => WsResponse::ThinkingContent { text },
         OutputEvent::Content { text } => WsResponse::Content { text },
         OutputEvent::ToolCall {
@@ -131,7 +131,7 @@ fn output_to_response(event: OutputEvent) -> WsResponse {
                 xflow_core::ToolResultDisplay::Full { content } => content.clone(),
                 xflow_core::ToolResultDisplay::Summary { text } => text.clone(),
                 xflow_core::ToolResultDisplay::LineCount { lines, preview } => {
-                    format!("{} ({} 行)", preview, lines)
+                    format!("{} ({} lines)", preview, lines)
                 }
                 xflow_core::ToolResultDisplay::ByteSize { size } => size.clone(),
                 xflow_core::ToolResultDisplay::StatusOnly => String::new(),

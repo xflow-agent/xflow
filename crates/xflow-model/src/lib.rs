@@ -2,10 +2,14 @@
 //!
 //! 提供统一的模型接口，支持多种后端
 
+pub mod errors;
 mod openai;
+pub mod prompts;
 mod types;
 
+pub use errors::{format_io_error, UserFriendlyError};
 pub use openai::OpenAIProvider;
+pub use prompts::{get_reviewer_prompt, get_system_prompt};
 pub use types::*;
 
 use async_trait::async_trait;

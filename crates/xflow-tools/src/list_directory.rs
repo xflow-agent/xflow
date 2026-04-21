@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::{debug, warn};
+use xflow_model::format_io_error;
 
 /// list_directory 工具参数
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,7 +60,7 @@ impl Tool for ListDirectoryTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: ListDirectoryArgs = match serde_json::from_value(args) {
             Ok(p) => p,
             Err(_) => ListDirectoryArgs {
@@ -67,26 +68,30 @@ impl Tool for ListDirectoryTool {
             },
         };
 
-        let path = PathBuf::from(&params.path);
+        // 规范化路径
+        let path = if PathBuf::from(&params.path).is_absolute() {
+            PathBuf::from(&params.path)
+        } else {
+            workdir.join(&params.path)
+        };
 
         debug!("列出目录: {:?}", path);
 
         // 检查目录是否存在
         if !path.exists() {
-            return Ok(format!("错误: 目录不存在: {}", params.path));
+            return Ok(format!("Error: directory not found: {}", params.path));
         }
 
-        // 检查是否为目录
         if !path.is_dir() {
-            return Ok(format!("错误: {} 不是目录", params.path));
+            return Ok(format!("Error: {} is not a directory", params.path));
         }
 
         // 读取目录内容
         let mut entries = match tokio::fs::read_dir(&path).await {
             Ok(e) => e,
             Err(e) => {
-                warn!("读取目录失败: {:?}", e);
-                return Ok(format!("错误: 无法读取目录 {}: {}", params.path, e));
+                warn!("Failed to read directory: {:?}", e);
+                return Ok(format_io_error(&e));
             }
         };
 
@@ -109,8 +114,8 @@ impl Tool for ListDirectoryTool {
         files.sort();
 
         // 构建输出
-        let mut result = format!("目录: {}\n", params.path);
-        result.push_str(&format!("({} 目录, {} 文件)\n", dirs.len(), files.len()));
+        let mut result = format!("Directory: {}\n", params.path);
+        result.push_str(&format!("({} dirs, {} files)\n", dirs.len(), files.len()));
         result.push_str("---\n");
 
         for dir in &dirs {

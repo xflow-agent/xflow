@@ -64,21 +64,14 @@ impl Tool for ReviewerAgentTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, _workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: ReviewerAgentArgs =
             serde_json::from_value(args).map_err(|e| anyhow::anyhow!("参数解析失败: {}", e))?;
 
-        info!("分析工具开始执行: {}", params.task);
+        info!("Reviewer agent task: {}", params.task);
 
-        // 返回任务说明，主对话 AI 会继续执行
         Ok(format!(
-            "开始执行分析任务: {}\n\n\
-            我将按以下步骤完成分析：\n\
-            1. 读取项目配置文件 (Cargo.toml, README.md)\n\
-            2. 分析项目入口文件和模块结构\n\
-            3. 深入分析各模块的实现代码\n\
-            4. 整合所有信息输出完整报告\n\n\
-            开始第一步：读取项目配置...",
+            "Starting analysis task: {}\n\nI will follow these steps:\n1. Read project config files (Cargo.toml, README.md)\n2. Analyze project entry files and module structure\n3. Deep-dive into each module's implementation\n4. Synthesize findings into a complete report\n\nStarting step 1: reading project config...",
             params.task
         ))
     }

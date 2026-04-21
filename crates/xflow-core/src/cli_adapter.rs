@@ -69,10 +69,13 @@ impl CliAdapter {
 
         match event {
             OutputEvent::ThinkingStart => {
-                // 重置状态
                 state.reset();
                 println!();
-                print!("\x1b[34m✻\x1b[0m \x1b[90m\x1b[3m思考中...\x1b[0m");
+                print!("\x1b[34m✻\x1b[0m \x1b[90m\x1b[3mThinking...\x1b[0m");
+            }
+
+            OutputEvent::ThinkingDot => {
+                print!("\x1b[90m\x1b[3m.\x1b[0m");
             }
 
             OutputEvent::ThinkingContent { text } => {
@@ -109,8 +112,10 @@ impl CliAdapter {
                         if state.thinking_ends_with_newline {
                             print!("\x1b[0m");
                             println!();
+                            println!();
                         } else {
                             println!("\x1b[0m");
+                            println!();
                         }
                         state.in_thinking_mode = false;
                         state.has_started_thinking_content = false;
@@ -139,8 +144,10 @@ impl CliAdapter {
                         if state.thinking_ends_with_newline {
                             print!("\x1b[0m");
                             println!();
+                            println!();
                         } else {
                             println!("\x1b[0m");
+                            println!();
                         }
                         state.in_thinking_mode = false;
                         state.has_started_thinking_content = false;
@@ -166,7 +173,7 @@ impl CliAdapter {
                     ToolResultDisplay::Full { content } => content.clone(),
                     ToolResultDisplay::Summary { text } => text.clone(),
                     ToolResultDisplay::LineCount { lines, preview } => {
-                        format!("{} ({} 行)", preview, lines)
+                        format!("{} ({} lines)", preview, lines)
                     }
                     ToolResultDisplay::ByteSize { size } => format!("({})", size),
                     ToolResultDisplay::StatusOnly => String::new(),
@@ -198,12 +205,12 @@ impl CliAdapter {
 
                 if result.success {
                     println!(
-                        "    \x1b[32m✓\x1b[0m \x1b[97m 调用成功\x1b[90m ({})\x1b[0m",
+                        "    \x1b[32m✓\x1b[0m \x1b[97m OK\x1b[90m ({})\x1b[0m",
                         size_str
                     );
                 } else {
                     println!(
-                        "    \x1b[31m✗\x1b[0m \x1b[97m 调用失败\x1b[90m ({})\x1b[0m",
+                        "    \x1b[31m✗\x1b[0m \x1b[97m FAILED\x1b[90m ({})\x1b[0m",
                         size_str
                     );
                 }
@@ -236,10 +243,10 @@ impl CliAdapter {
         // 显示危险等级
         if req.danger_level > 0 {
             let level_display = match req.danger_level {
-                3 => "🔴 极度危险",
-                2 => "🟠 高度危险",
-                1 => "🟡 中度危险",
-                _ => "⚠️ 需要注意",
+                3 => "CRITICAL",
+                2 => "HIGH RISK",
+                1 => "MODERATE RISK",
+                _ => "CAUTION",
             };
             if let Some(ref reason) = req.danger_reason {
                 println!("    \x1b[33m⚠️  {} - {}\x1b[0m", level_display, reason);
@@ -249,7 +256,7 @@ impl CliAdapter {
         }
 
         // 显示详情
-        println!("  \x1b[90m工具:\x1b[0m {}", req.tool);
+        println!("  \x1b[90mTool:\x1b[0m {}", req.tool);
         if !req.message.is_empty() {
             for line in req.message.lines() {
                 println!("  \x1b[90m{}\x1b[0m", line);
@@ -258,9 +265,9 @@ impl CliAdapter {
 
         // 确认提示
         let confirm_msg = if req.danger_level > 0 {
-            "⚠️  确认执行此危险操作?"
+            "Confirm this dangerous operation?"
         } else {
-            "是否执行此操作?"
+            "Execute this operation?"
         };
 
         let render_config = inquire::ui::RenderConfig::default()
@@ -272,16 +279,16 @@ impl CliAdapter {
             .prompt()
         {
             Ok(true) => {
-                println!("    \x1b[32m✓ 执行操作...\x1b[0m");
+                println!("    \x1b[32m✓ Executing...\x1b[0m");
                 true
             }
             Ok(false) => {
-                println!("    \x1b[33m✗ 已取消\x1b[0m");
+                println!("    \x1b[33m✗ Cancelled\x1b[0m");
                 false
             }
             Err(e) => {
-                tracing::warn!("确认对话框错误: {}", e);
-                println!("    \x1b[31m✗ 确认失败，已取消\x1b[0m");
+                tracing::warn!("Confirm dialog error: {}", e);
+                println!("    \x1b[31m✗ Confirmation failed, cancelled\x1b[0m");
                 false
             }
         };
@@ -360,7 +367,7 @@ impl UiAdapter for ChildCliAdapter {
         // 子上下文只转发事件，不处理交互
         if let XflowEvent::Output(OutputEvent::ToolCall { name, .. }) = event {
             // 简化渲染，只输出关键信息
-            println!("  \x1b[90m[Agent 调用工具: {}]\x1b[0m", name);
+            println!("  \x1b[90m[Agent calling tool: {}]\x1b[0m", name);
         }
     }
 

@@ -168,7 +168,7 @@ pub trait Tool: Send + Sync {
     fn parameters_schema(&self) -> serde_json::Value;
 
     /// 执行工具
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String>;
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String>;
 
     /// 获取工具定义
     fn definition(&self) -> ToolDefinition {

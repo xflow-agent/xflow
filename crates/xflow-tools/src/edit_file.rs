@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
+use xflow_model::format_io_error;
 
 /// edit_file 工具参数
 #[derive(Debug, Serialize, Deserialize)]
@@ -75,53 +76,58 @@ impl Tool for EditFileTool {
         })
     }
 
-    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn execute(&self, args: serde_json::Value, workdir: &std::path::Path) -> anyhow::Result<String> {
         let params: EditFileArgs = serde_json::from_value(args)?;
-        let path = PathBuf::from(&params.path);
 
-        debug!("编辑文件: {:?}", path);
+        debug!("编辑文件: {}", params.path);
 
         // 安全检查：目录遍历攻击
         if params.path.contains("..") || params.path.contains("~") {
-            warn!("检测到目录遍历攻击尝试: {}", params.path);
-            return Ok(format!("错误: 路径包含非法字符: {}", params.path));
+            warn!("Path traversal detected: {}", params.path);
+            return Ok(format!("Error: invalid path: {}", params.path));
         }
+
+        // 规范化路径
+        let path = if PathBuf::from(&params.path).is_absolute() {
+            PathBuf::from(&params.path)
+        } else {
+            workdir.join(&params.path)
+        };
+
+        debug!("规范化后路径: {:?}", path);
 
         // 检查文件是否存在
         if !path.exists() {
-            warn!("文件不存在: {:?}", path);
-            return Ok(format!("错误: 文件不存在: {}", params.path));
+            return Ok(format!("Error: file not found: {}", params.path));
         }
 
-        // 检查是否为文件
         if !path.is_file() {
-            return Ok(format!("错误: {} 不是文件", params.path));
+            return Ok(format!("Error: {} is not a file", params.path));
         }
 
         // 读取文件内容
         let content = match tokio::fs::read_to_string(&path).await {
             Ok(c) => c,
             Err(e) => {
-                warn!("读取文件失败: {:?}", e);
-                return Ok(format!("错误: 无法读取文件 {}: {}", params.path, e));
+                warn!("Failed to read file: {:?}", e);
+                return Ok(format_io_error(&e));
             }
         };
 
         // 检查旧内容是否存在
         if !content.contains(&params.old_string) {
-            return Ok("错误: 在文件中找不到指定的旧内容。\n\
-                提示: 请确保 old_string 与文件中的内容完全匹配（包括空格和换行）。\n\
-                建议先使用 read_file 工具查看文件内容。"
+            return Ok("Error: old_string not found in file.\n\
+                Tip: ensure old_string exactly matches the file content (including whitespace and newlines).\n\
+                Suggestion: use read_file first to view the file content."
                 .to_string());
         }
 
-        // 统计匹配次数
         let match_count = content.matches(&params.old_string).count();
         if match_count > 1 {
             return Ok(format!(
-                "错误: 找到 {} 处匹配的旧内容。\n\
-                提示: old_string 必须唯一确定要替换的位置。\n\
-                请扩大 old_string 的范围（包含更多上下文）以确保唯一性。",
+                "Error: found {} matches for old_string.\n\
+                Tip: old_string must uniquely identify the replacement location.\n\
+                Suggestion: include more context in old_string to ensure uniqueness.",
                 match_count
             ));
         }
@@ -135,29 +141,25 @@ impl Tool for EditFileTool {
             Ok(_) => {
                 match tokio::fs::rename(&temp_path, &path).await {
                     Ok(_) => {
-                        info!("成功编辑文件: {:?}", path);
+                        info!("File edited successfully: {:?}", path);
 
-                        // 计算变更统计
                         let old_lines = params.old_string.lines().count();
                         let new_lines = params.new_string.lines().count();
                         let line_diff = new_lines as i32 - old_lines as i32;
 
                         let result = if line_diff > 0 {
                             format!(
-                                "成功编辑文件: {}\n\
-                                变更: 删除了 {} 行，添加了 {} 行（净增 {} 行）",
+                                "Edited: {} (removed {} lines, added {} lines, +{} net)",
                                 params.path, old_lines, new_lines, line_diff
                             )
                         } else if line_diff < 0 {
                             format!(
-                                "成功编辑文件: {}\n\
-                                变更: 删除了 {} 行，添加了 {} 行（净减 {} 行）",
-                                params.path, old_lines, new_lines, -line_diff
+                                "Edited: {} (removed {} lines, added {} lines, {} net)",
+                                params.path, old_lines, new_lines, line_diff
                             )
                         } else {
                             format!(
-                                "成功编辑文件: {}\n\
-                                变更: 替换了 {} 行内容",
+                                "Edited: {} (replaced {} lines)",
                                 params.path, old_lines
                             )
                         };
@@ -165,16 +167,15 @@ impl Tool for EditFileTool {
                         Ok(result)
                     }
                     Err(e) => {
-                        warn!("重命名文件失败: {:?}", e);
-                        // 清理临时文件
+                        warn!("Failed to rename file: {:?}", e);
                         let _ = tokio::fs::remove_file(&temp_path).await;
-                        Ok(format!("错误: 无法保存文件 {}: {}", params.path, e))
+                        Ok(format_io_error(&e))
                     }
                 }
             }
             Err(e) => {
-                warn!("写入临时文件失败: {:?}", e);
-                Ok(format!("错误: 无法写入临时文件: {}", e))
+                warn!("Failed to write temp file: {:?}", e);
+                Ok(format_io_error(&e))
             }
         }
     }
@@ -199,10 +200,9 @@ mod tests {
             "new_string": "Hello Rust"
         });
 
-        let result = tool.execute(args).await.unwrap();
-        assert!(result.contains("成功编辑文件"));
+        let result = tool.execute(args, &std::env::current_dir().unwrap()).await.unwrap();
+        assert!(result.contains("Edited:"));
 
-        // 验证文件内容
         let content: String = tokio::fs::read_to_string(temp_file.path()).await.unwrap();
         assert!(content.contains("Hello Rust"));
         assert!(!content.contains("Hello World"));
@@ -217,8 +217,8 @@ mod tests {
             "new_string": "new"
         });
 
-        let result = tool.execute(args).await.unwrap();
-        assert!(result.contains("文件不存在"));
+        let result = tool.execute(args, &std::env::current_dir().unwrap()).await.unwrap();
+        assert!(result.contains("file not found"));
     }
 
     #[tokio::test]
@@ -233,8 +233,8 @@ mod tests {
             "new_string": "New"
         });
 
-        let result = tool.execute(args).await.unwrap();
-        assert!(result.contains("找不到指定的旧内容"));
+        let result = tool.execute(args, &std::env::current_dir().unwrap()).await.unwrap();
+        assert!(result.contains("old_string not found"));
     }
 
     #[tokio::test]
@@ -250,7 +250,7 @@ mod tests {
             "new_string": "Hi"
         });
 
-        let result = tool.execute(args).await.unwrap();
-        assert!(result.contains("找到 2 处匹配"));
+        let result = tool.execute(args, &std::env::current_dir().unwrap()).await.unwrap();
+        assert!(result.contains("found 2 matches"));
     }
 }

@@ -7,7 +7,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::info;
-use xflow_model::{Message, ModelProvider, ToolDefinition};
+use xflow_model::{get_reviewer_prompt, Message, ModelProvider, ToolDefinition};
 
 /// 输出回调类型
 type OutputCallback = Box<dyn Fn(String) + Send + Sync>;
@@ -22,17 +22,17 @@ pub struct ReviewerAgent {
 
 impl ReviewerAgent {
     /// 创建新的 Reviewer Agent
-    pub fn new() -> Self {
+    pub fn new(tool_definitions: Vec<ToolDefinition>) -> Self {
         Self {
-            tool_definitions: Self::build_tool_definitions(),
+            tool_definitions,
             output_callback: None,
         }
     }
 
     /// 创建带输出回调的 Reviewer Agent
-    pub fn with_output(output_callback: OutputCallback) -> Self {
+    pub fn with_output(tool_definitions: Vec<ToolDefinition>, output_callback: OutputCallback) -> Self {
         Self {
-            tool_definitions: Self::build_tool_definitions(),
+            tool_definitions,
             output_callback: Some(output_callback),
         }
     }
@@ -41,72 +41,11 @@ impl ReviewerAgent {
     pub fn set_output_callback(&mut self, output_callback: OutputCallback) {
         self.output_callback = Some(output_callback);
     }
-
-    /// 构建工具定义
-    fn build_tool_definitions() -> Vec<ToolDefinition> {
-        vec![
-            ToolDefinition {
-                tool_type: "function".to_string(),
-                function: xflow_model::FunctionDefinition {
-                    name: "read_file".to_string(),
-                    description: "读取文件内容".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "path": {
-                                "type": "string",
-                                "description": "文件绝对路径"
-                            }
-                        },
-                        "required": ["path"]
-                    }),
-                },
-            },
-            ToolDefinition {
-                tool_type: "function".to_string(),
-                function: xflow_model::FunctionDefinition {
-                    name: "search_file".to_string(),
-                    description: "搜索代码内容".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "pattern": {
-                                "type": "string",
-                                "description": "搜索模式"
-                            },
-                            "path": {
-                                "type": "string",
-                                "description": "搜索路径"
-                            }
-                        },
-                        "required": ["pattern"]
-                    }),
-                },
-            },
-            ToolDefinition {
-                tool_type: "function".to_string(),
-                function: xflow_model::FunctionDefinition {
-                    name: "run_shell".to_string(),
-                    description: "执行 Shell 命令（如 cargo check, cargo clippy）".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "command": {
-                                "type": "string",
-                                "description": "Shell 命令"
-                            }
-                        },
-                        "required": ["command"]
-                    }),
-                },
-            },
-        ]
-    }
 }
 
 impl Default for ReviewerAgent {
     fn default() -> Self {
-        Self::new()
+        Self::new(Vec::new())
     }
 }
 
@@ -125,66 +64,7 @@ impl Agent for ReviewerAgent {
     }
 
     fn system_prompt(&self) -> String {
-        r#"你是一个专业的代码审查员 Agent，负责检查代码质量和发现问题。
-
-## 你的职责
-
-1. **代码审查**: 检查代码质量、风格、潜在问题
-2. **问题分析**: 分析 bug 原因、性能瓶颈
-3. **安全检查**: 检查安全漏洞、敏感信息泄露
-4. **架构评估**: 评估代码结构、依赖关系
-
-## 可用工具
-
-- `read_file`: 读取文件内容
-- `search_file`: 搜索代码
-- `run_shell`: 执行检查命令
-
-## 审查清单
-
-### 代码质量
-- [ ] 代码是否清晰易懂
-- [ ] 命名是否有意义
-- [ ] 是否有重复代码
-- [ ] 错误处理是否完善
-
-### 潜在问题
-- [ ] 空指针/空值检查
-- [ ] 边界条件处理
-- [ ] 并发安全问题
-- [ ] 资源泄漏风险
-
-### 性能
-- [ ] 不必要的循环/计算
-- [ ] 内存使用效率
-- [ ] I/O 操作优化
-
-### 安全
-- [ ] 输入验证
-- [ ] 敏感数据处理
-- [ ] 权限检查
-
-## 输出格式
-
-```
-审查结果摘要：[总体评价]
-
-发现的问题:
-1. [问题描述] (严重程度：高/中/低)
-   位置：[文件:行号]
-   建议：[修复建议]
-
-优点:
-- [优点 1]
-- [优点 2]
-
-改进建议:
-1. [建议 1]
-2. [建议 2]
-```
-
-请开始审查任务。"#
-            .to_string()
+        get_reviewer_prompt()
     }
 
     async fn execute(

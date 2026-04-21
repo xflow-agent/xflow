@@ -8,31 +8,31 @@ use regex::Regex;
 // 预编译正则表达式（ANSI 渲染）
 static CODE_BLOCK_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"```(\w*)\n([\s\S]*?)```").unwrap());
-static HEADING6_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^###### (.+)$").unwrap());
-static HEADING5_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^##### (.+)$").unwrap());
-static HEADING4_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^#### (.+)$").unwrap());
-static HEADING3_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^### (.+)$").unwrap());
-static HEADING2_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^## (.+)$").unwrap());
-static HEADING1_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^# (.+)$").unwrap());
+static HEADING6_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^###### (.+)$").unwrap());
+static HEADING5_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^##### (.+)$").unwrap());
+static HEADING4_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^#### (.+)$").unwrap());
+static HEADING3_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^### (.+)$").unwrap());
+static HEADING2_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^## (.+)$").unwrap());
+static HEADING1_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^# (.+)$").unwrap());
 static BOLD_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*\*(.+?)\*\*").unwrap());
 static ITALIC_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*(.+?)\*").unwrap());
 static INLINE_CODE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"`(.+?)`").unwrap());
 static STRIKETHROUGH_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"~~(.+?)~~").unwrap());
 static LINK_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\[(.+?)\]\((.+?)\)").unwrap());
-static ULIST_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*[-*] (.+)$").unwrap());
-static OLIST_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*(\d+)\. (.+)$").unwrap());
-static QUOTE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^> (.+)$").unwrap());
-static HR_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^---+$").unwrap());
+static ULIST_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^\s*[-*] (.+)$").unwrap());
+static OLIST_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^\s*(\d+)\. (.+)$").unwrap());
+static QUOTE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^> (.+)$").unwrap());
+static HR_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^---+$").unwrap());
 
 // 预编译正则表达式（HTML 渲染）
 static HTML_CODE_BLOCK_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"```(\w*)\n([\s\S]*?)```").unwrap());
-static HTML_HEADING6_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^###### (.+)$").unwrap());
-static HTML_HEADING5_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^##### (.+)$").unwrap());
-static HTML_HEADING4_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^#### (.+)$").unwrap());
-static HTML_HEADING3_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^### (.+)$").unwrap());
-static HTML_HEADING2_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^## (.+)$").unwrap());
-static HTML_HEADING1_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^# (.+)$").unwrap());
+static HTML_HEADING6_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^###### (.+)$").unwrap());
+static HTML_HEADING5_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^##### (.+)$").unwrap());
+static HTML_HEADING4_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^#### (.+)$").unwrap());
+static HTML_HEADING3_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^### (.+)$").unwrap());
+static HTML_HEADING2_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^## (.+)$").unwrap());
+static HTML_HEADING1_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^# (.+)$").unwrap());
 static HTML_BOLD_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*\*(.+?)\*\*").unwrap());
 static HTML_ITALIC_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*(.+?)\*").unwrap());
 static HTML_INLINE_CODE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"`(.+?)`").unwrap());
@@ -52,11 +52,6 @@ impl MarkdownRenderer {
     /// 将 Markdown 渲染为 ANSI 格式（简化版，使用正则）
     pub fn render_to_ansi(&self, markdown: &str) -> String {
         let mut output = markdown.to_string();
-
-        // 转义 HTML 实体
-        output = output.replace('&', "&amp;");
-        output = output.replace('<', "&lt;");
-        output = output.replace('>', "&gt;");
 
         // 代码块
         output = CODE_BLOCK_REGEX
@@ -97,9 +92,9 @@ impl MarkdownRenderer {
             .replace_all(&output, "\x1b[3m$1\x1b[0m")
             .to_string();
 
-        // 行内代码
+        // 行内代码（保留反引号作为视觉分隔）
         output = INLINE_CODE_REGEX
-            .replace_all(&output, "\x1b[92m$1\x1b[0m")
+            .replace_all(&output, "\x1b[92m`$1`\x1b[0m")
             .to_string();
 
         // 删除线
@@ -238,11 +233,15 @@ impl StreamingMarkdownRenderer {
     pub fn render_chunk(&mut self, text: &str, output_fn: &mut impl FnMut(&str)) {
         self.buffer.push_str(text);
 
-        // 简单策略：如果缓冲区有完整段落，就渲染
-        if self.buffer.contains("\n\n") || self.buffer.len() > 200 {
-            let rendered = self.renderer.render_to_ansi(&self.buffer);
+        // 行缓冲策略：遇到换行符就渲染到上一个换行符
+        if let Some(last_newline) = self.buffer.rfind('\n') {
+            // 提取到最后一个换行符的内容
+            let content_to_render = self.buffer[..=last_newline].to_string();
+            // 保留剩余内容
+            self.buffer = self.buffer[last_newline + 1..].to_string();
+            
+            let rendered = self.renderer.render_to_ansi(&content_to_render);
             output_fn(&rendered);
-            self.buffer.clear();
         }
     }
 
@@ -297,7 +296,7 @@ mod tests {
     fn test_render_to_html() {
         let renderer = MarkdownRenderer::new();
         let output = renderer.render_to_html("# Hello\n\n**bold**");
-        assert!(output.contains("<h1>"));
-        assert!(output.contains("<strong>"));
+        assert!(output.contains("<h1>Hello</h1>"), "output was: {}", output);
+        assert!(output.contains("<strong>bold</strong>"), "output was: {}", output);
     }
 }
