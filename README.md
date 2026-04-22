@@ -34,7 +34,7 @@ cargo build --release
 ./target/release/xflow --model qwen2.5:7b
 
 # 指定 vLLM 服务器
-./target/release/xflow --host http://localhost:8000/v1
+./target/release/xflow --base-url http://localhost:8000/v1
 ```
 
 **Web 版本:**
@@ -144,26 +144,14 @@ registry.register(Arc::new(MyTool));
 
 ```
 crates/
-├── xflow/          # CLI 入口
-├── xflow-core/     # 核心引擎
-│   ├── session.rs      # 会话管理
-│   ├── events.rs       # 统一事件模型
-│   ├── ui_adapter.rs   # UI 适配器 trait
-│   ├── cli_adapter.rs  # CLI 实现
-│   └── websocket_adapter.rs  # WebSocket 实现
-├── xflow-model/    # 模型接口
-├── xflow-tools/    # 工具系统
-│   ├── tool.rs         # Tool trait 定义
-│   ├── read_file.rs
-│   ├── write_file.rs
-│   ├── edit_file.rs
-│   └── ...
+├── xflow/          # 主命令行入口
+├── xflow-agent/    # 代理核心逻辑
 ├── xflow-context/  # 上下文管理
-├── xflow-agent/    # Agent 系统
-└── xflow-server/   # Web 服务器
-    ├── ws.rs             # WebSocket 处理
-    └── state.rs          # 会话状态
-web/                # 前端界面
+├── xflow-core/     # 核心功能
+├── xflow-model/    # 模型交互
+├── xflow-server/   # 服务器
+└── xflow-tools/    # 工具集
+web/                # Web 界面
 ```
 
 ## 命令行参数
@@ -171,7 +159,7 @@ web/                # 前端界面
 ```
 OPTIONS:
     -m, --model <MODEL>      模型名称 [default: gemma4:e4b]
-    --host <HOST>            API 地址 [default: http://localhost:11434]
+    --base-url <BASE_URL>    API 地址 [default: http://localhost:11434/v1]
     -d, --workdir <WORKDIR>  工作目录 [default: .]
 ```
 
