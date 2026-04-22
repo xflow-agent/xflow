@@ -180,10 +180,13 @@ impl ModelProvider for OpenAIProvider {
 
             let mut stream = response.bytes_stream();
             let mut buffer = String::new();
-
+            
             // 累积工具调用（增量式）
-            let mut pending_tool_calls: std::collections::HashMap<usize, (String, String, String)> =
-                std::collections::HashMap::new();
+            let mut pending_tool_calls: std::collections::HashMap<usize, (String, String, String)> = std::collections::HashMap::new();
+            
+            // 用于处理跨块的 <think> 标签
+            let mut in_thinking = false;
+            let mut thinking_buffer = String::new();
 
             while let Some(chunk) = stream.next().await {
                 let chunk = match chunk {
@@ -198,10 +201,10 @@ impl ModelProvider for OpenAIProvider {
 
                 // 处理 SSE 格式
                 while let Some(pos) = buffer.find('\n') {
-                    let line = buffer[..pos].trim().to_string();
+                    let line = buffer[..pos].to_string();
                     buffer = buffer[pos + 1..].to_string();
 
-                    if line.is_empty() || line == "data: [DONE]" {
+                    if line.trim().is_empty() || line.trim() == "data: [DONE]" {
                         continue;
                     }
 
@@ -214,16 +217,82 @@ impl ModelProvider for OpenAIProvider {
                                 };
 
                                 // 处理文本内容
-                                let content = choice.delta.content.unwrap_or_default();
+                                let mut content = choice.delta.content.unwrap_or_default();
                                 // 处理思考内容 (支持 reasoning_content 和 reasoning 两种字段名)
-                                let reasoning = choice.delta.reasoning_content
+                                let mut reasoning = choice.delta.reasoning_content
                                     .or(choice.delta.reasoning)
                                     .filter(|s| !s.is_empty());
+                                
+                                // 注意：不对每个流式chunk执行trim操作，因为会导致单词间的空格被移除
+                                // 例如：先返回"The"，然后返回" user"，第二个chunk开头的空格必须保留
+                                // 我们只在最终的完整内容上执行trim操作
+                                
+                                // 处理 minimax 模型的 <think> 标签
+                                if !content.is_empty() {
+                                    let mut i = 0;
+                                    let mut processed_content = String::new();
+                                    let mut processed_reasoning = None;
+                                    
+                                    while i < content.len() {
+                                        if in_thinking {
+                                            // 寻找结束标签
+                                            if let Some(end_idx) = content[i..].find("</think>") {
+                                                // 提取标签内的内容
+                                                thinking_buffer.push_str(&content[i..i+end_idx]);
+                                                // 移除前面的 > 符号和空白
+                                                let trimmed_thinking = thinking_buffer.trim_start().trim_start_matches('>').trim_start().to_string();
+                                                if !trimmed_thinking.is_empty() {
+                                                    processed_reasoning = Some(trimmed_thinking);
+                                                }
+                                                // 重置状态
+                                                in_thinking = false;
+                                                thinking_buffer.clear();
+                                                // 跳过结束标签
+                                                i += end_idx + 7;
+                                                
+                                                // 跳过结束标签后的 > 符号和空白
+                                                while i < content.len() && (content[i..].starts_with('>') || content[i..].starts_with('\n') || content[i..].starts_with(' ')) {
+                                                    i += 1;
+                                                }
+                                            } else {
+                                                // 没有找到结束标签，将剩余内容添加到思考缓冲区
+                                                thinking_buffer.push_str(&content[i..]);
+                                                i = content.len();
+                                            }
+                                        } else {
+                                            // 寻找开始标签
+                                            if let Some(start_idx) = content[i..].find("<think>") {
+                                                // 将标签前的内容添加到正文
+                                                let pre_think_content = &content[i..i+start_idx];
+                                                processed_content.push_str(pre_think_content);
+                                                // 开始思考模式
+                                                in_thinking = true;
+                                                // 跳过开始标签
+                                                i += start_idx + 6;
+                                            } else {
+                                                // 没有找到开始标签，将剩余内容添加到正文
+                                                processed_content.push_str(&content[i..]);
+                                                i = content.len();
+                                            }
+                                        }
+                                    }
+                                    
+                                    // 更新内容和思考
+                                    content = processed_content;
+                                    if processed_reasoning.is_some() {
+                                        reasoning = processed_reasoning;
+                                    }
+                                }
 
-                                if !content.is_empty() || reasoning.is_some() {
+                                // 实时输出内容，确保流式体验
+                                // 移除内容和思考末尾的换行，确保所有模型的输出格式一致
+                                let trimmed_content = content.trim_end_matches('\n').to_string();
+                                let trimmed_reasoning = reasoning.map(|r| r.trim_end_matches('\n').to_string());
+                                
+                                if !trimmed_content.is_empty() || trimmed_reasoning.is_some() {
                                     yield Ok(StreamChunk {
-                                        content,
-                                        reasoning,
+                                        content: trimmed_content,
+                                        reasoning: trimmed_reasoning,
                                         done: false,
                                         tool_calls: vec![],
                                     });
@@ -279,6 +348,7 @@ impl ModelProvider for OpenAIProvider {
                                         })
                                         .collect();
 
+                                    // 输出工具调用，不重复输出内容
                                     yield Ok(StreamChunk {
                                         content: String::new(),
                                         reasoning: None,

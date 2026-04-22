@@ -237,6 +237,7 @@ impl ToolLoop {
                         tool_calls.extend(chunk_tool_calls);
                     }
 
+                    // 处理思考内容
                     if let Some(reasoning_text) = reasoning {
                         if !reasoning_text.is_empty() {
                             if !animation_stopped {
@@ -253,6 +254,7 @@ impl ToolLoop {
                         }
                     }
 
+                    // 处理正文内容
                     if !in_tool_call_mode && !content.is_empty() && !content.trim().is_empty() {
                         if !animation_stopped {
                             animation.stop();
@@ -375,9 +377,14 @@ impl ToolLoop {
                 xflow_tools::ResultDisplayType::Full => ToolResultDisplay::Full { content: text },
                 xflow_tools::ResultDisplayType::LineCount => {
                     let lines = result.lines().count();
+                    let preview: String = result
+                        .lines()
+                        .take(t.metadata().display.max_preview_lines)
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     ToolResultDisplay::LineCount {
                         lines,
-                        preview: text,
+                        preview,
                     }
                 }
                 xflow_tools::ResultDisplayType::ByteSize => ToolResultDisplay::ByteSize { size: text },

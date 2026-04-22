@@ -40,7 +40,7 @@ impl Tool for ListDirectoryTool {
             danger_level: 0,
             display: ToolDisplayConfig {
                 primary_param: "path",
-                result_display: ResultDisplayType::LineCount,
+                result_display: ResultDisplayType::Full,
                 max_preview_lines: 10,
                 max_preview_chars: 500,
             },

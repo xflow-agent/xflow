@@ -103,20 +103,14 @@ impl CliAdapter {
 
             OutputEvent::Content { text } => {
                 if text.is_empty() || text.trim().is_empty() {
-                    print!("{}", text);
                     return;
                 }
 
                 if !state.has_printed_content_icon {
                     if state.in_thinking_mode {
-                        if state.thinking_ends_with_newline {
-                            print!("\x1b[0m");
-                            println!();
-                            println!();
-                        } else {
-                            println!("\x1b[0m");
-                            println!();
-                        }
+                        print!("\x1b[0m");
+                        println!();
+                        println!();
                         state.in_thinking_mode = false;
                         state.has_started_thinking_content = false;
                     } else {
