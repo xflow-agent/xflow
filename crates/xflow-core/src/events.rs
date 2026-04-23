@@ -43,6 +43,8 @@ pub enum OutputEvent {
     Done { tools_called: usize, loops: usize },
     /// 循环进度
     LoopProgress { current: usize, max: usize },
+    /// Token 使用情况
+    TokenUsage { prompt: u32, completion: u32, total: u32, session: u32 },
 }
 
 /// 工具结果数据

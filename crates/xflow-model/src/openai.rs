@@ -3,10 +3,11 @@
 //! 支持 OpenAI、vLLM、Ollama (OpenAI 模式) 等兼容服务
 
 use crate::types::*;
-use crate::{Error, ModelInfo, ModelProvider, Result, StreamChunk};
+use crate::{Error, ModelInfo, ModelProvider, Result, StreamChunk, Usage};
 use async_trait::async_trait;
 use futures::stream::{Stream, StreamExt};
 use reqwest::Client;
+use std::any::Any;
 use std::pin::Pin;
 use tracing::debug;
 
@@ -61,6 +62,85 @@ impl OpenAIProvider {
     /// 构建 chat completions URL
     fn chat_url(&self) -> String {
         format!("{}/chat/completions", self.base_url)
+    }
+
+    /// 构建 models URL
+    fn models_url(&self) -> String {
+        format!("{}/models", self.base_url)
+    }
+
+    /// 构建 Ollama show URL
+    fn ollama_show_url(&self) -> String {
+        format!("{}/api/show", self.base_url)
+    }
+
+    /// 获取模型的最大上下文长度
+    pub async fn get_max_context_length(&self) -> Result<usize> {
+        // 尝试从 OpenAI 兼容端点获取
+        if let Ok(tokens) = self.get_max_context_length_from_openai().await {
+            return Ok(tokens);
+        }
+
+        // 尝试从 Ollama 端点获取
+        if let Ok(tokens) = self.get_max_context_length_from_ollama().await {
+            return Ok(tokens);
+        }
+
+        // 返回默认值
+        Ok(128000)
+    }
+
+    /// 从 OpenAI 兼容端点获取最大上下文长度
+    async fn get_max_context_length_from_openai(&self) -> Result<usize> {
+        let url = self.models_url();
+        let builder = self.client.get(&url);
+        let response = build_request_with_auth(builder, &self.api_key).send().await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Model(format!("Failed to get models: {}", response.status())));
+        }
+
+        let data: serde_json::Value = response.json().await?;
+        if let Some(models) = data["data"].as_array() {
+            for model in models {
+                if model["id"].as_str() == Some(&self.model) {
+                    // 尝试从不同字段获取上下文长度
+                    if let Some(tokens) = model["max_model_len"].as_u64() {
+                        return Ok(tokens as usize);
+                    } else if let Some(tokens) = model["max_context_tokens"].as_u64() {
+                        return Ok(tokens as usize);
+                    }
+                }
+            }
+        }
+
+        Err(Error::Model("Context length not found in OpenAI response".to_string()))
+    }
+
+    /// 从 Ollama 端点获取最大上下文长度
+    async fn get_max_context_length_from_ollama(&self) -> Result<usize> {
+        let url = self.ollama_show_url();
+        let request = serde_json::json!({
+            "name": self.model
+        });
+
+        let response = self.client.post(&url).json(&request).send().await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Model(format!("Failed to get model info: {}", response.status())));
+        }
+
+        let data: serde_json::Value = response.json().await?;
+        if let Some(model_info) = data["model_info"].as_object() {
+            // 尝试从不同字段获取上下文长度
+            if let Some(tokens) = model_info["context_length"].as_u64() {
+                return Ok(tokens as usize);
+            } else if let Some(tokens) = model_info["num_ctx"].as_u64() {
+                return Ok(tokens as usize);
+            }
+        }
+
+        Err(Error::Model("Context length not found in Ollama response".to_string()))
     }
 
     /// 将消息转换为 OpenAI 格式
@@ -141,6 +221,9 @@ impl ModelProvider for OpenAIProvider {
             stream: true,
             tools: self.convert_tools(tools),
             tool_choice: None,
+            stream_options: Some(OpenAIStreamOptions {
+                include_usage: true,
+            }),
         };
 
         let client = self.client.clone();
@@ -211,9 +294,29 @@ impl ModelProvider for OpenAIProvider {
                     if let Some(data) = line.strip_prefix("data: ") {
                         match serde_json::from_str::<OpenAIStreamResponse>(data) {
                             Ok(resp) => {
-                                let choice = match resp.choices.into_iter().next() {
+                                let resp_usage = resp.usage;
+                                let resp_choices = resp.choices;
+
+                                let choice = match resp_choices.into_iter().next() {
                                     Some(c) => c,
-                                    None => continue,
+                                    None => {
+                                        // choices 为空但 usage 不为空：这是单独的 usage chunk
+                                        if let Some(usage) = resp_usage {
+                                            let converted_usage = Usage {
+                                                prompt_tokens: usage.prompt_tokens,
+                                                completion_tokens: usage.completion_tokens,
+                                                total_tokens: usage.total_tokens,
+                                            };
+                                            yield Ok(StreamChunk {
+                                                content: String::new(),
+                                                reasoning: None,
+                                                done: true,
+                                                tool_calls: vec![],
+                                                usage: Some(converted_usage),
+                                            });
+                                        }
+                                        continue;
+                                    }
                                 };
 
                                 // 处理文本内容
@@ -295,6 +398,7 @@ impl ModelProvider for OpenAIProvider {
                                         reasoning: trimmed_reasoning,
                                         done: false,
                                         tool_calls: vec![],
+                                        usage: None,
                                     });
                                 }
 
@@ -348,12 +452,20 @@ impl ModelProvider for OpenAIProvider {
                                         })
                                         .collect();
 
+                                    // 转换 usage 信息
+                                    let usage = resp_usage.map(|u| Usage {
+                                        prompt_tokens: u.prompt_tokens,
+                                        completion_tokens: u.completion_tokens,
+                                        total_tokens: u.total_tokens,
+                                    });
+
                                     // 输出工具调用，不重复输出内容
                                     yield Ok(StreamChunk {
                                         content: String::new(),
                                         reasoning: None,
                                         done: true,
                                         tool_calls: converted,
+                                        usage,
                                     });
 
                                     pending_tool_calls.clear();
@@ -377,6 +489,10 @@ impl ModelProvider for OpenAIProvider {
             name: self.model.clone(),
             provider: self.provider_name.clone(),
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -406,6 +522,13 @@ struct OpenAIRequest {
     tools: Vec<OpenAITool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<OpenAIStreamOptions>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct OpenAIStreamOptions {
+    include_usage: bool,
 }
 
 /// OpenAI 消息格式
@@ -497,6 +620,8 @@ struct OpenAIUsage {
 struct OpenAIStreamResponse {
     #[serde(default)]
     choices: Vec<OpenAIStreamChoice>,
+    #[serde(default)]
+    usage: Option<OpenAIUsage>,
 }
 
 /// OpenAI 流式选择项

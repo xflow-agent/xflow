@@ -14,6 +14,7 @@ pub use types::*;
 
 use async_trait::async_trait;
 use futures::Stream;
+use std::any::Any;
 use std::pin::Pin;
 
 /// 模型提供者 Trait
@@ -28,6 +29,9 @@ pub trait ModelProvider: Send + Sync {
 
     /// 获取模型信息
     fn model_info(&self) -> ModelInfo;
+
+    /// 转换为 Any 类型，用于向下转换
+    fn as_any(&self) -> &dyn Any;
 }
 
 /// 模型信息

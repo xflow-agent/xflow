@@ -67,6 +67,8 @@ pub enum WsResponse {
     Error { message: String },
     /// 心跳响应
     Pong,
+    /// Token 使用情况
+    TokenUsage { prompt: u32, completion: u32, total: u32, session: u32 },
     /// 会话信息
     SessionInfo { session_id: SessionId },
     /// 确认请求
@@ -152,6 +154,12 @@ fn output_to_response(event: OutputEvent) -> WsResponse {
             loops,
         },
         OutputEvent::LoopProgress { current, max } => WsResponse::LoopProgress { current, max },
+            OutputEvent::TokenUsage { prompt, completion, total, session } => WsResponse::TokenUsage {
+                prompt,
+                completion,
+                total,
+                session,
+            },
     }
 }
 

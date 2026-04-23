@@ -111,6 +111,19 @@ pub struct StreamChunk {
     pub reasoning: Option<String>,
     pub done: bool,
     pub tool_calls: Vec<ToolCall>,
+    /// Token 使用情况（仅在最后一个 chunk 中返回）
+    pub usage: Option<Usage>,
+}
+
+/// Token 使用情况
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Usage {
+    /// 提示词 Token 数
+    pub prompt_tokens: u32,
+    /// 完成 Token 数
+    pub completion_tokens: u32,
+    /// 总 Token 数
+    pub total_tokens: u32,
 }
 
 /// 工具定义（用于告诉模型可用工具）

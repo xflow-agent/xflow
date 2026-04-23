@@ -27,3 +27,5 @@ build/
 # xflow
 .xflow/
 docs/
+claude-code-sourcemap/
+

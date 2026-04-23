@@ -38,6 +38,10 @@ struct Args {
     /// 调试模式（输出日志到控制台）
     #[arg(short, long)]
     debug: bool,
+
+    /// 最大上下文 token 数（默认：128000）
+    #[arg(long, default_value = "128000", env = "XFLOW_MAX_CONTEXT_TOKENS")]
+    max_context_tokens: usize,
 }
 
 #[tokio::main]
@@ -65,6 +69,25 @@ async fn main() -> Result<()> {
         args.model.clone(),
         "openai-compatible".to_string(),
     ));
+
+    // 尝试获取模型的最大上下文长度
+    if let Some(openai_provider) = provider.as_any().downcast_ref::<OpenAIProvider>() {
+        match openai_provider.get_max_context_length().await {
+            Ok(max_context) => {
+                info!("模型最大上下文长度: {} tokens", max_context);
+                // 设置环境变量
+                std::env::set_var("XFLOW_MAX_CONTEXT_TOKENS", max_context.to_string());
+            }
+            Err(e) => {
+                info!("无法获取模型上下文长度，使用默认值: {}", e);
+                // 使用命令行参数或默认值
+                std::env::set_var("XFLOW_MAX_CONTEXT_TOKENS", args.max_context_tokens.to_string());
+            }
+        }
+    } else {
+        // 使用命令行参数或默认值
+        std::env::set_var("XFLOW_MAX_CONTEXT_TOKENS", args.max_context_tokens.to_string());
+    }
 
     // 启动 REPL
     let mut repl = Repl::new(provider, &args.model, &full_workdir)?;

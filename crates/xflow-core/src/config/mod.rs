@@ -48,6 +48,7 @@ impl Default for ToolsConfig {
 pub struct SessionConfig {
     pub max_message_history: usize,
     pub dot_animation_max: usize,
+    pub max_context_tokens: usize,
 }
 
 impl Default for SessionConfig {
@@ -55,6 +56,7 @@ impl Default for SessionConfig {
         Self {
             max_message_history: env_or_parse("XFLOW_MAX_MESSAGE_HISTORY", 100),
             dot_animation_max: env_or_parse("XFLOW_DOT_ANIMATION_MAX", 60),
+            max_context_tokens: env_or_parse("XFLOW_MAX_CONTEXT_TOKENS", 128000),
         }
     }
 }

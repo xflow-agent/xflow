@@ -7,6 +7,12 @@ pub struct TokenEstimator {
     /// 每个字符平均 Token 数（经验值）
     /// 英文约 0.25 tokens/char，中文约 0.5 tokens/char
     chars_per_token: f64,
+    /// 历史精确 token 统计（可选）
+    pub exact_tokens: Option<usize>,
+    /// 历史提示词 token 统计（可选）
+    pub prompt_tokens: Option<usize>,
+    /// 历史完成 token 统计（可选）
+    pub completion_tokens: Option<usize>,
 }
 
 impl Default for TokenEstimator {
@@ -21,11 +27,28 @@ impl TokenEstimator {
         // 使用保守估计：约 4 字符 = 1 token
         Self {
             chars_per_token: 4.0,
+            exact_tokens: None,
+            prompt_tokens: None,
+            completion_tokens: None,
         }
     }
 
+    /// 使用精确的 token 统计更新估算器
+    pub fn update_with_exact(&mut self, prompt_tokens: u32, completion_tokens: u32, total_tokens: u32) {
+        self.prompt_tokens = Some(prompt_tokens as usize);
+        self.completion_tokens = Some(completion_tokens as usize);
+        self.exact_tokens = Some(total_tokens as usize);
+    }
+
     /// 估算文本的 token 数量
+    /// 如果有精确统计，使用精确统计，否则使用估算
     pub fn estimate(&self, text: &str) -> usize {
+        // 如果有精确统计，使用精确统计
+        if let Some(exact) = self.exact_tokens {
+            return exact;
+        }
+
+        // 否则使用估算
         if text.is_empty() {
             return 0;
         }

@@ -225,6 +225,15 @@ impl CliAdapter {
             OutputEvent::LoopProgress { .. } => {
                 // 不显示循环进度
             }
+
+            OutputEvent::TokenUsage { prompt, completion, total, session } => {
+                println!();
+                println!("\x1b[32m📊\x1b[0m Token Usage:");
+                println!("  Prompt: {}", prompt);
+                println!("  Completion: {}", completion);
+                println!("  Total: {}", total);
+                println!("  Session Total: {}", session);
+            }
         }
 
         std::io::Write::flush(&mut std::io::stdout()).ok();

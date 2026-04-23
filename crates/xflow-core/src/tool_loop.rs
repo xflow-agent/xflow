@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, warn};
 use xflow_model::{Message, ModelProvider, StreamChunk, ToolCall, ToolDefinition};
 use xflow_tools::ToolRegistry;
@@ -34,12 +34,18 @@ pub struct ToolLoopResult {
     pub loops: usize,
 }
 
+type TokenUsageCallback = Arc<Mutex<Option<Box<dyn FnMut(u32, u32, u32) + Send>>>>;
+
 pub struct ToolLoop {
     provider: Arc<dyn ModelProvider>,
     tools: ToolRegistry,
     ui: Arc<dyn UiAdapter>,
     workdir: PathBuf,
     config: XflowConfig,
+    /// Token 使用统计更新回调
+    token_usage_callback: TokenUsageCallback,
+    /// 会话总 Token 使用量
+    session_token_usage: u32,
 }
 
 impl ToolLoop {
@@ -56,14 +62,36 @@ impl ToolLoop {
             ui,
             workdir,
             config,
+            token_usage_callback: Arc::new(Mutex::new(None)),
+            session_token_usage: 0,
         }
+    }
+
+    /// 设置 Token 使用统计更新回调
+    pub fn with_token_usage_callback<F>(self, callback: F) -> Self
+    where
+        F: FnMut(u32, u32, u32) + Send + 'static,
+    {
+        *self.token_usage_callback.lock().unwrap() = Some(Box::new(callback));
+        self
+    }
+
+    /// 获取会话总 Token 使用量
+    fn get_session_token_usage(&self) -> u32 {
+        self.session_token_usage
+    }
+
+    /// 重置会话 Token 使用量
+    #[allow(dead_code)]
+    pub fn reset_session_token_usage(&mut self) {
+        self.session_token_usage = 0;
     }
 
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tools.definitions()
     }
 
-    pub async fn run(&self, messages: &mut Vec<Message>) -> Result<ToolLoopResult> {
+    pub async fn run(&mut self, messages: &mut Vec<Message>) -> Result<ToolLoopResult> {
         let mut loop_count = 0;
         let mut total_tools_called = 0;
 
@@ -201,7 +229,7 @@ impl ToolLoop {
     }
 
     async fn process_stream(
-        &self,
+        &mut self,
         stream: std::pin::Pin<Box<dyn futures::Stream<Item = xflow_model::Result<StreamChunk>> + Send>>,
         animation: &mut ThinkingAnimation,
     ) -> StreamOutcome {
@@ -225,7 +253,30 @@ impl ToolLoop {
                     reasoning,
                     done,
                     tool_calls: chunk_tool_calls,
+                    usage,
                 }) => {
+                    // 处理 usage 信息
+                    if let Some(usage_info) = &usage {
+                        debug!("Received usage info: prompt_tokens={}, completion_tokens={}, total_tokens={}", 
+                               usage_info.prompt_tokens, usage_info.completion_tokens, usage_info.total_tokens);
+                        // 更新会话总 Token 使用量
+                        self.session_token_usage += usage_info.total_tokens;
+                        // 调用 token_usage_callback 回调
+                        if let Ok(mut callback_opt) = self.token_usage_callback.lock() {
+                            if let Some(callback) = &mut *callback_opt {
+                                callback(usage_info.prompt_tokens, usage_info.completion_tokens, usage_info.total_tokens);
+                            }
+                        }
+                        // 发送 TokenUsage 事件到 UI
+                        let session_tokens = self.get_session_token_usage();
+                        self.ui.output(OutputEvent::TokenUsage {
+                            prompt: usage_info.prompt_tokens,
+                            completion: usage_info.completion_tokens,
+                            total: usage_info.total_tokens,
+                            session: session_tokens,
+                        }).await;
+                    }
+
                     if !chunk_tool_calls.is_empty() {
                         if !animation_stopped {
                             animation.stop();
@@ -443,6 +494,8 @@ impl ToolLoop {
     }
 
     fn trim_message_history(&self, messages: &mut Vec<Message>) {
+        use xflow_context::TokenEstimator;
+        
         let system_msg_count = if !messages.is_empty() && messages[0].role == xflow_model::Role::System
         {
             1
@@ -450,6 +503,69 @@ impl ToolLoop {
             0
         };
 
+        // 获取模型的最大上下文长度（默认 4096 tokens）
+        let max_context_tokens = self.config.session().max_context_tokens;
+        
+        // 计算当前消息的 token 数量
+        let estimator = TokenEstimator::new();
+        let mut total_tokens = 0;
+        
+        for msg in &mut *messages {
+            if let Some(content) = &msg.content {
+                total_tokens += estimator.estimate(content);
+            }
+        }
+        
+        // 如果 token 数量超过最大上下文长度，进行智能修剪
+        if total_tokens > max_context_tokens {
+            // 保留系统提示
+            let mut new_messages = Vec::new();
+            if system_msg_count > 0 {
+                new_messages.push(messages[0].clone());
+                if let Some(content) = &messages[0].content {
+                    total_tokens -= estimator.estimate(content);
+                }
+            }
+            
+            // 从后往前添加消息，直到 token 数量接近最大上下文长度
+            let mut temp_tokens = total_tokens;
+            let mut temp_messages = Vec::new();
+            
+            for msg in messages.iter().rev() {
+                if msg.role == xflow_model::Role::System {
+                    continue; // 跳过系统提示，已经添加了
+                }
+                
+                if let Some(content) = &msg.content {
+                    let msg_tokens = estimator.estimate(content);
+                    if temp_tokens - msg_tokens > (max_context_tokens as f64 * 0.8) as usize { // 保留 80% 的空间
+                        temp_tokens -= msg_tokens;
+                    } else {
+                        temp_messages.push(msg.clone());
+                    }
+                } else {
+                    // 如果消息没有内容，直接添加
+                    temp_messages.push(msg.clone());
+                }
+            }
+            
+            // 反转消息顺序，使其恢复正常顺序
+            temp_messages.reverse();
+            new_messages.extend(temp_messages);
+            
+            // 添加省略提示
+            new_messages.push(Message::system(
+                "[some history messages omitted to save context space]",
+            ));
+
+            *messages = new_messages;
+            warn!(
+                "Message history trimmed based on token count, keeping ~{} tokens",
+                (max_context_tokens as f64 * 0.8) as usize
+            );
+        }
+        
+        // 同时保留基于消息数量的修剪，作为后备
         let total_messages = messages.len();
         let max_non_system = self.config.session().max_message_history;
 
